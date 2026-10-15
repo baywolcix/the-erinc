@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#ed4c35"><title>THE ERİNÇ · Beylerbeyi Savaşı</title><link rel="icon" href="assets/icon.svg" type="image/svg+xml"><link rel="stylesheet" href="style.css"><script src="config.js"></script><script src="client.js" defer></script></head>
+<body>
+<canvas id="arena" aria-label="Beylerbeyi oyun haritası"></canvas>
+<main id="lobby">
+  <header class="masthead"><a class="brand" href="./"><span class="brand-icon">e.</span> BEYLERBEYİ OYUN KULÜBÜ</a><span class="edition">PASTANEDE BİR MESELE VAR.</span></header>
+  <section class="lobby-grid">
+    <div class="intro"><div class="eyebrow"><span class="dot"></span> ONLINE MULTIPLAYER · 2.0</div>
+      <h1>THE ERİNÇ<span>Beylerbeyi<br>Savaşı<span class="red">.</span></span></h1>
+      <p class="lead">Pastanede son bir zeytinli poğaça kaldı.<br>Kırıntıları topla. Büyü. Masaya hükmet.</p>
+      <form id="join-form"><label for="name">PASTANEDE SANA NE DİYELİM?</label><input id="name" maxlength="20" placeholder="Oyuncu adın" autocomplete="nickname" required aria-describedby="message">
+        <div class="skin-label"><label>KARAKTERİNİ SEÇ</label><span>6 tanıdık yüz</span></div><div id="skins" role="group" aria-label="Karakter seçimi"></div>
+        <button id="play" class="primary" type="submit">MASAYA KATIL <span>↗</span></button>
+        <p id="message" role="status" aria-live="polite">10 kişilik ortak harita. Hesap açmak yok.</p>
+      </form>
+    </div>
+    <div class="poster"><div class="poster-top"><span>BEYLERBEYİ PASTANESİ</span><span>HERKES AYNI MASADA ↗</span></div><div class="poster-title">SON POĞAÇA.<br><em>BÜYÜK MESELE.</em></div>
+      <div class="character-stage" id="character-stage"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="pastry-art">🥯<span>ZEYTİNLİ!</span></div></div>
+      <div class="poster-bottom"><span class="stamp">FIRINDAN<br><strong>5 DK’DA BİR</strong></span><p>Bir poğaça. On rakip.<br><b>Kimin iştahı daha büyük?</b></p></div>
+    </div>
+  </section>
+  <footer class="lobby-footer"><span><b>01</b> Kırıntıları ye, büyü.</span><span><b>02</b> Küçük rakipleri yut.</span><span><b>03</b> Son poğaçayı kap.</span><span class="controls-hint">FARE / WASD / DOKUNMATİK</span></footer>
+</main>
+<div id="hud" hidden>
+  <div class="game-brand panel">THE ERİNÇ<span>Beylerbeyi Savaşı</span></div>
+  <div class="event panel"><span id="event-label">SON ZEYTİNLİ POĞAÇA</span><strong id="event-time">05:00</strong><small id="event-hint">Fırından çıkmasına</small></div>
+  <aside class="leaderboard panel"><div class="board-title">MASANIN LİDERLERİ <span id="online">0/10</span></div><ol id="leaders"></ol></aside>
+  <div class="score panel"><span>KÜTLE <b id="mass">70</b></span><span>POĞAÇA <b id="wins">0</b></span><small id="ping">Bağlanıyor</small></div>
+  <button id="leave" class="leave panel">Çıkış ↗</button><div id="toast" role="status" aria-live="polite"></div>
+  <canvas id="minimap" width="150" height="150" aria-label="Küçük harita"></canvas>
+  <div id="joystick" aria-label="Dokunmatik yön kontrolü"><div id="stick"></div></div>
+  <div id="death" class="modal" hidden><div class="death-card"><div class="eyebrow">BU MASA SANA DAR GELDİ</div><h2>Yutuldun!</h2><p id="death-message"></p><button id="respawn" class="primary">YENİDEN KATIL ↗</button><button id="menu">Karakter seçimine dön</button></div></div>
+</div>
+</body></html>
