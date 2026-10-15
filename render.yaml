@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: the-erinc-online
+    runtime: node
+    plan: free
+    buildCommand: node --check server.js
+    startCommand: node server.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 24
+      - key: ALLOWED_ORIGINS
+        value: https://umutbulut.com,https://www.umutbulut.com
