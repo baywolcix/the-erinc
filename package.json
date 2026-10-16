@@ -1,6 +1,1 @@
-{
-  "name": "the-erinc-beylerbeyi", "version": "2.0.0", "private": true,
-  "description": "THE ERİNÇ: Beylerbeyi Savaşı — gerçek online multiplayer",
-  "engines": { "node": ">=22" },
-  "scripts": { "start": "node server.js", "test": "node --test test/*.test.js" }
-}
+{"name":"the-erinc-online","version":"1.0.0","private":true,"scripts":{"start":"node server.js","test":"node test.js"},"engines":{"node":">=18"},"dependencies":{"ws":"^8.18.0"}}

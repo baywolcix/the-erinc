@@ -3,11 +3,6 @@ services:
     name: the-erinc-online
     runtime: node
     plan: free
-    buildCommand: node --check server.js
-    startCommand: node server.js
+    buildCommand: npm install
+    startCommand: npm start
     healthCheckPath: /health
-    envVars:
-      - key: NODE_VERSION
-        value: 24
-      - key: ALLOWED_ORIGINS
-        value: https://umutbulut.com,https://www.umutbulut.com
