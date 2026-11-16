@@ -83,7 +83,7 @@ backup_db() {
   if container_running; then
     local rel="${dest#"$DATA_DIR"/}"
     [ "$rel" = "$dest" ] && die "Yedek hedefi data/ altında olmalı: $dest"
-    docker_cmd exec -T bulut-home python -c "import sqlite3,sys;s=sqlite3.connect('/data/bulut.db');d=sqlite3.connect(sys.argv[1]);s.backup(d);d.close()" "/data/$rel" \
+    docker_cmd exec bulut-home python -c "import sqlite3,sys;s=sqlite3.connect('/data/bulut.db');d=sqlite3.connect(sys.argv[1]);s.backup(d);d.close()" "/data/$rel" \
       || die "Çevrimiçi yedek alınamadı"
   elif command -v sqlite3 >/dev/null 2>&1; then
     sqlite3 "$DATA_DIR/bulut.db" ".backup '$dest'"

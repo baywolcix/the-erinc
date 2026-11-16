@@ -2,9 +2,13 @@
 
 Kişisel, tek sahipli yapay zekâ asistanı. Hedef cihaz: ASUS VivoBook X415JA (i3-1005G1, 8 GB RAM), Debian 13, 7/24 açık.
 
-Şu an çalışanlar (v0.2.0): modelin gerçek araç kullanımı (hafıza, görevler, projeler, günlük özet, web araması/okuma), günlük brifing (zamanlanmış, model yoksa veri özeti), sohbet (kalıcı geçmiş), sağlayıcı bağımsız model katmanı, aylık TL bütçe koruması ve maliyet kaydı, uzun dönem hafıza (görüntüle/düzelt/sil), kalıcı görev kuyruğu ve arka plan işçisi, hedefi alt görevlere ayırma, onay merkezi (kodda zorunlu), aktivite akışı, günlük rapor grafikleri, sistem durumu, otomatik günlük veritabanı yedeği, tarayıcı tabanlı bas-konuş/sesli okuma. Ayrıntı: `PROGRESS.md`.
+Şu an çalışanlar (v0.3.0): mobil bildirimler (ntfy/Telegram + uygulama içi), genel zamanlanmış görevler, güvenli anahtar kurulumu ve ücretsiz anahtar kontrolü, kullanıcı başlatmalı canlı API testleri, modelin gerçek araç kullanımı (hafıza, görevler, projeler, günlük özet, web araması/okuma), günlük brifing (zamanlanmış, model yoksa veri özeti), sohbet (kalıcı geçmiş), sağlayıcı bağımsız model katmanı, aylık TL bütçe koruması ve maliyet kaydı, uzun dönem hafıza (görüntüle/düzelt/sil), kalıcı görev kuyruğu ve arka plan işçisi, hedefi alt görevlere ayırma, onay merkezi (kodda zorunlu), aktivite akışı, günlük rapor grafikleri, sistem durumu, otomatik günlük veritabanı yedeği, tarayıcı tabanlı bas-konuş/sesli okuma. Ayrıntı: `PROGRESS.md`.
 
-## Hızlı başlangıç (Debian 13, Docker)
+## Kurulum
+
+**ASUS / Debian 13 için adım adım: [`INSTALL_DEBIAN.md`](INSTALL_DEBIAN.md)** — `sudo scripts/install-debian.sh` her şeyi yapar. Güncelleme: `sudo scripts/update.sh` (başarısızsa otomatik geri alır).
+
+## Hızlı başlangıç (elle, Docker)
 
 ```bash
 sudo apt install -y docker.io docker-compose   # Debian 13 depo paketleri; ya da Docker'ın resmi deposu

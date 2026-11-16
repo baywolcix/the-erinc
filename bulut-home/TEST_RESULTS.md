@@ -1,5 +1,55 @@
 # Test Sonuçları
 
+## 2026-11-16 — Oturum 3: gerçek kullanıma hazırlık
+
+### Gerçek API ile canlı test yapıldı mı? **HAYIR.**
+Bu oturumda API anahtarı yoktu; ücretli hiçbir model çağrısı yapılmadı. `tests/live` (3 test) atlandı.
+Gerçek API'ye yapılan tek istek ücretsizdi: **geçersiz** bir anahtarla Models API (`GET /v1/models/claude-haiku-5-5`) → Anthropic sunucusu **401** döndü, uygulama "Anahtar reddedildi (401)" dedi. Bu, gerçek HTTP yolunu, SDK sürümünü ve hata eşlemesini doğrular; **model yanıtını ve araç kullanımını doğrulamaz.**
+
+### Otomatik testler
+| Komut | Sonuç |
+|---|---|
+| `python -m pytest -q` | **142 geçti, 3 atlandı** (`live`) |
+| `-m fake_llm` | 43 — model yanıtları senaryolu (FakeProvider). Gerçek model davranışını doğrulamaz. |
+| `-m sdk_http` | 8 — gerçek SDK + sahte HTTP (Models API kontrolü dahil) |
+| `-m no_llm` | 95 — bildirim kuyruğu/teslimat, zamanlamalar, maskeleme, .env sihirbazı, web, auth, DB |
+| `-m live` | 3 atlandı (anahtar yok) |
+| `python tests/e2e_ui.py` | **E2E OK** — bildirim kutusu, zamanlama önizleme/oluşturma, ücretsiz anahtar kontrolü, yanlış onay metniyle canlı testin reddi |
+| `shellcheck -x scripts/*.sh` | Temiz |
+
+Canlı test düzeneğinin kendisi sahte sağlayıcıyla test edildi ve raporun **`real_api: false`** yazdığı doğrulandı (`test_live_harness_with_fake_is_not_reported_as_real`) — sahte bir test gerçek API testi gibi raporlanamaz.
+
+### Docker
+| Adım | Sonuç |
+|---|---|
+| Üretim Dockerfile'ı, `docker.io/python` taban | **429** (Docker Hub hız sınırı) — ortam engeli |
+| Üretim Dockerfile'ı, `--build-arg BASE_IMAGE=mirror.gcr.io/library/python:3.13-slim-trixie` (Google'ın resmi Docker Hub aynası) | **Başarılı** — iki kez (ara sürüm ve son kod) |
+| Son imaj: compose ile başlatma, `/api/health` 0.3.0, kullanıcı `bulut` | Başarılı, RAM ≈43 MiB |
+| Konteynerde `app.cli status / check / live-test --yes` (anahtarsız) | status doğru; check "anahtar ayarlı değil" (çıkış 1); live-test **"ÇALIŞTIRILMADI"** (çıkış 3) |
+| Kayıtlarda anahtar araması | 0 eşleşme |
+
+### Debian betikleri — gerçekten çalıştırıldı (bu ortamda, root olarak)
+Geçici klon + sahte "uzak" depo ile uçtan uca:
+| Senaryo | Sonuç |
+|---|---|
+| `install-debian.sh --skip-packages --non-interactive --force` | .env (600) + gizli anahtar üretimi, derleme, başlatma, sağlık, ilk kurulum kodu ✓ |
+| `update.sh`, uzakta yerel commit çatışması | `--ff-only` reddetti, **hiçbir şey değişmedi** ✓ |
+| `update.sh`, **bozuk** sürüm (main.py sözdizimi hatası) | Yedek → derleme → sağlık başarısız → **otomatik geri alma**: önceki kod + imaj, sürüm 0.3.0, veri korundu, çıkış 1 ✓ |
+| `update.sh`, iyi sürüm | 0.3.0 → 0.3.1-test, veri korundu ✓ |
+| `backup.sh` | Çevrimiçi yedek + bütünlük kontrolü ✓ |
+| `rollback.sh --restore-db --yes` | Kod/imaj geri, veritabanı güncelleme öncesine döndü, mevcut hali `pre-restore-*.db` olarak saklandı ✓ |
+| `rollback.sh --db-only <pre-restore>` | Saklanan duruma geri dönüldü (sonradan eklenen kayıt geri geldi) ✓ |
+
+Testin yakaladığı hata: `docker exec -T` (bu bayrak yalnızca `docker compose exec`'te var) → yedek alınamıyordu; güncelleme güvenli şekilde **hiçbir şeyi değiştirmeden** durdu. Düzeltildi.
+
+### Test EDİLEMEYENLER
+- **Gerçek model çağrısı** (sohbet/hafıza/görev aracı) — anahtar yok.
+- **Mobil bildirim teslimatı** (ntfy.sh / Telegram'a gerçek gönderim) — ağ politikası genel siteleri engelliyor; biçim sahte HTTP ile doğrulandı.
+- **Debian 13 paket adları** (`docker.io`, `docker-compose`, `docker-buildx`) — `deb.debian.org` bu ortamda engelli (`connect_rejected`). Paket adları bilgiye dayalı; `docker-buildx` kurulamazsa betik açık uyarı veriyor.
+- Betiklerin **root olmayan kullanıcıyla sudo üzerinden** çalışması (`require_root` yeniden başlatma, git'in depo sahibi olarak çalışması) — burada yalnızca root ile çalıştırıldı.
+- Tailscale kurulumu/`serve`, ASUS donanımı, kapak kapalıyken çalışma.
+
+
 ## 2026-11-16 — Oturum 2 (devam): araç kullanımı, web araştırması, günlük brifing
 
 | Komut | Sonuç |

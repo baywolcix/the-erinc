@@ -53,3 +53,20 @@ Faz 1 tamamlandı, Faz 2'nin çoğu yapıldı.
 - [ ] Gerçek web erişimi (geliştirme ortamı ağı genel siteleri engelliyor)
 - [ ] Üretim Dockerfile'ı ile yeni kodun temiz derlemesi (Docker Hub 429); doğrulama imajıyla çalıştırıldı
 - [ ] Bildirimler (anlık) — sıradaki
+
+## Oturum 3 — 2026-11-16: gerçek kullanıma hazırlık (v0.3.0)
+
+- [x] **Güvenli anahtar kurulumu:** `scripts/configure.py` (sunucuda, stdlib; getpass, `.env` atomik + 600, değerleri asla basmaz), `app.cli check` (Models API, token harcamaz), arayüzde "Anahtarları kontrol et". Anahtarsız bölümler çalışmaya devam eder.
+- [x] **Gizli değer maskeleme:** `app/redact.py` — aktivite, hata kayıtları, araç kayıtları, bildirimler ve Python logları; bilinen anahtar değerleri + desenler (sk-ant, Bearer, Telegram, ntfy).
+- [x] **Kullanıcı başlatmalı canlı testler:** `app/livetest.py` — sohbet, hafıza arama (araç), görev oluşturma (araç). CLI `live-test` (onay sorar) veya arayüzde "CANLI TEST" onay metni. Geçici DB, maliyet ana bütçeye yazılır, sert tavan $0.05, rapor `data/live_tests/`. Sahte sağlayıcıyla `real_api: false`.
+- [x] **Bildirimler:** `app/notify.py` — uygulama içi kutu + ntfy + Telegram; kalıcı teslim kuyruğu, 1/5/30 dk yeniden deneme, sessiz saat, en düşük seviye, ayrıntı gizleme, dedupe. Olaylar: görev başarısız/tamamlandı, onay bekliyor, bütçe %80/%100, brifing hazır. Aktivite sayfasında kutu + rozet, Sistem'de test bildirimi.
+- [x] **Genel zamanlanmış görevler:** `app/schedules.py` — daily/weekly/monthly/every; slot başına tek çalışma (PK), yeniden başlatmaya dayanıklı, kaçırılanlar için tek telafi, önceki görev açıksa atlama; model ücretli zamanlama oluşturursa onaya kadar kapalı. Görevler sayfasında yönetim + önizleme; araçlar: create_schedule, list_schedules, disable_schedule.
+- [x] **Debian betikleri:** `install-debian.sh`, `update.sh` (otomatik geri almalı), `rollback.sh` (`--restore-db`, `--db-only`), `backup.sh`, ortak `lib.sh`. Uçtan uca denendi (bkz. TEST_RESULTS).
+- [x] **INSTALL_DEBIAN.md:** ASUS için adım adım.
+- [x] **Docker:** üretim Dockerfile'ı ayna taban imajıyla gerçekten derlendi; `BASE_IMAGE` argümanı eklendi.
+- [x] Şema v3 (notifications, notification_deliveries, schedules, schedule_runs).
+
+### Doğrulanmamış (oturum 3 sonu)
+- [ ] Gerçek API ile canlı test (anahtar gerekiyor) → ASUS'ta `app.cli live-test`
+- [ ] Gerçek ntfy/Telegram teslimatı
+- [ ] Debian 13 paket adları ve root olmayan kullanıcıyla betikler (ASUS'ta ilk kurulumda doğrulanacak)

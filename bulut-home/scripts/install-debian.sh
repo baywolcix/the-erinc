@@ -40,7 +40,11 @@ if [ "$SKIP_PKGS" = 0 ]; then
   c_info "Paketler kuruluyor (docker.io, docker-compose, docker-buildx, git, sqlite3, python3, curl)…"
   as_root apt-get update -q
   as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -q \
-    ca-certificates curl git sqlite3 python3 docker.io docker-compose docker-buildx
+    ca-certificates curl git sqlite3 python3 docker.io docker-compose
+  # BuildKit (Dockerfile'daki gizli CA bağlama ve önbellek için) — ayrı adım: paket yoksa açık uyarı ver
+  if ! as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -q docker-buildx; then
+    c_warn "docker-buildx paketi kurulamadı. Derleme BuildKit ister: https://docs.docker.com/engine/install/debian/ adresindeki resmi Docker deposunu ekleyip 'docker-buildx-plugin' kur."
+  fi
   as_root systemctl enable --now docker
   if [ "$OWNER" != "root" ] && ! id -nG "$OWNER" | grep -qw docker; then  # sudo'suz docker için
     as_root usermod -aG docker "$OWNER"

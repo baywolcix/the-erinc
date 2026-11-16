@@ -27,3 +27,13 @@
 | 2026-11-16 | Web araması: Brave API veya kendi SearXNG; Anthropic sunucu tarafı web_search şimdilik kullanılmadı | Sağlayıcıdan bağımsız kalmak ve maliyeti ayrı izlemek. Anthropic aracı ücretli ve yalnızca Claude ile çalışır; sonra seçenek olarak eklenebilir. |
 | 2026-11-16 | Web isteklerinde SSRF koruması: yalnızca küresel IP'ler, yerel ağ adları engelli, her yönlendirme yeniden denetlenir | BULUT ev ağında ve tailnet'te çalışıyor; model/web içeriği iç servislere istek attıramamalı. Bilinen sınır: DNS rebinding penceresi. |
 | 2026-11-16 | Brifing verisi deterministik, model yalnızca metne çeviriyor | Uydurma iş/sayı olmasın; model yoksa da brifing üretilsin. Günde bir deneme (başarısız olsa bile tekrar açılmaz). |
+| 2026-11-16 | Anahtarlar yalnızca sunucuda `scripts/configure.py` ile `.env`'e; arayüzden anahtar girişi yok | Web üzerinden gizli değer taşımak ve DB'de saklamak saldırı yüzeyini büyütür. Arayüz yalnızca "ayarlı mı / geçerli mi" gösterir. |
+| 2026-11-16 | Anahtar doğrulama Models API ile | Token harcamaz; anahtar + model erişimi doğrulanır. |
+| 2026-11-16 | Canlı testler geçici DB'de, maliyet ana bütçeye kopyalanır, $0.05 tavan, açık onay metni | Gerçek veriyi kirletmeden, bütçeyi atlamadan, kazara tetiklenmeden. |
+| 2026-11-16 | Mobil bildirim: ntfy + Telegram (Web Push şimdilik yok) | Web Push için VAPID şifreleme kütüphanesi (cryptography) ve iOS'ta ana ekrana eklenmiş PWA gerekir; ntfy/Telegram tek HTTP isteği, ek bağımlılık yok, iPhone uygulaması var. Web Push sonra eklenebilir. |
+| 2026-11-16 | Bildirim teslimi DB kuyruğundan (outbox) | Yeniden başlatmada kaybolmasın, geçici ağ hatası yeniden denensin. |
+| 2026-11-16 | Zamanlama biçimi sade (daily/weekly/monthly/every), cron değil | Hem kullanıcı hem model için anlaşılır; yanlış yazımı ayrıştırıcı reddeder. |
+| 2026-11-16 | Zamanlama: slot PK + "önceki görev açıksa atla" + kaçırılanlar için tek telafi | Çift çalışma, yığılma ve açılışta görev seli olmasın. |
+| 2026-11-16 | Modelin oluşturduğu ücretli zamanlama onaya kadar kapalı; sahibinin arayüzden oluşturduğu doğrudan açık | Tekrarlayan harcama "para harcama" sayılır; sahibinin açık eylemi zaten onaydır. |
+| 2026-11-16 | `update.sh` başarısızlıkta kodu ve imajı otomatik geri alır ama veritabanını almaz | Göçler eklemeli; otomatik DB geri yükleme aradaki veriyi siler. DB geri yükleme açık komutla ve önce güvenlik kopyası alınarak. |
+| 2026-11-16 | Dockerfile `ARG BASE_IMAGE` | Docker Hub 429'da resmi ayna (mirror.gcr.io) kullanılabilsin; varsayılan değişmedi. |

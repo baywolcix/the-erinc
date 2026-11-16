@@ -1,4 +1,4 @@
-# Mimari (v0.2.0)
+# Mimari (v0.3.0)
 
 ```
 iPhone / Windows tarayıcı ──HTTPS (Tailscale Serve)──► 127.0.0.1:8080
@@ -39,11 +39,15 @@ iPhone / Windows tarayıcı ──HTTPS (Tailscale Serve)──► 127.0.0.1:808
 | `tools.py` | Araç kayıt defteri: şema + kodda girdi doğrulama + kayıt; kritik araçlar yalnızca onay açar; bağlama göre araç setleri (`CHAT_TOOLS`, `TASK_TOOLS`) |
 | `agent.py` | Manuel araç döngüsü: model → tool_use → araç → tool_result (tek mesajda) → model; 6 adım / 12 araç sınırı; rota sabitleme |
 | `web.py` | Arama (Brave/SearXNG) + sayfa okuma; SSRF koruması, yönlendirme denetimi, boyut/süre sınırı, güvenilmeyen içerik sarmalama, `web_sources` kaydı |
+| `redact.py` | Gizli değer maskeleme (kayıtlı değerler + desenler), log filtresi |
+| `livetest.py` | Kullanıcı başlatmalı gerçek API testleri (geçici DB, ana bütçe, $0.05 tavan, JSON rapor) |
+| `notify.py` | Bildirimler: uygulama içi + ntfy/Telegram kalıcı teslim kuyruğu, yeniden deneme, sessiz saat, bütçe eşikleri |
+| `schedules.py` | Genel zamanlanmış görevler: biçim ayrıştırma, sonraki zaman (saat dilimi), `tick` (slot başına tek görev) |
 | `briefing.py` | Günlük brifing: veri toplama (son 24 saat), deterministik metin, isteğe bağlı model özeti, günlük zamanlayıcı |
 
 ## Veri modeli
 
-`users, sessions, login_attempts, projects, conversations, messages, llm_calls, memories (+memories_fts), tasks, approvals, activity, meta` + v2: `tool_calls, web_sources, briefings`.
+`users, sessions, login_attempts, projects, conversations, messages, llm_calls, memories (+memories_fts), tasks, approvals, activity, meta` + v2: `tool_calls, web_sources, briefings` + v3: `notifications, notification_deliveries, schedules, schedule_runs`.
 
 Sohbet akışı: `chat.reply` → bağlam (son 20 mesaj + hafıza + görev özeti) → `agent.run` (araçlar) → son metin `messages`'a; araç çağrıları `tool_calls`'a.
 
@@ -59,3 +63,14 @@ Görev durumları: `pending → running → done | failed`, `pending → waiting
 6. Bütçe ve çağrı hızı sınırları router'da, model isteminden bağımsız; eşzamanlı çağrılar en kötü durum tutarını ayırır.
 8. Model yalnızca kayıtlı araçları çağırabilir; kritik etkili araçlar onay kaydı açar. Web içeriği `<web_icerik>` içinde güvenilmeyen veri olarak verilir; yerel/özel ağ adreslerine istek atılamaz.
 7. Gizli anahtarlar yalnızca ortamda; `data/` ve `.env` Git'e girmez.
+
+## Arka plan döngüleri (tek süreç, asyncio)
+| Döngü | Aralık | Görev |
+|---|---|---|
+| TaskWorker | 5 sn (boşta) | Görev kuyruğunu yürütür |
+| Zamanlayıcı | 30 sn | Günlük brifing + `schedules.tick` |
+| Bildirim teslimi | 10 sn | `notification_deliveries` kuyruğu |
+| Yedek | saatlik kontrol | Günde bir veritabanı yedeği |
+
+## Sunucu betikleri (`scripts/`)
+`configure.py` (anahtarlar, `.env`) · `install-debian.sh` · `update.sh` (yedek → pull → derle → sağlık → otomatik geri alma) · `rollback.sh` · `backup.sh` · `lib.sh` (ortak). Betikler gerekirse kendilerini sudo ile yeniden başlatır; git komutlarını depo sahibi olarak çalıştırır.
