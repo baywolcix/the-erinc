@@ -191,7 +191,39 @@ loaders.tasks = async () => {
   });
   const list = $("#task-list");
   list.replaceChildren(...(data.tasks.length ? data.tasks.map(taskItem) : [el("p", { class: "muted" }, "Bu filtrede görev yok.")]));
+  loadSchedules().catch((e) => toast(e.message, true));
 };
+async function loadSchedules() {
+  const rows = await api("/api/schedules");
+  $("#schedule-list").replaceChildren(...(rows.length ? rows.map((sc) => el("div", { class: "item" },
+    el("div", { class: "item-head" }, el("span", { class: "title" }, sc.title), el("span", { class: "pill " + (sc.enabled ? "running" : "") }, sc.enabled ? "Açık" : "Kapalı")),
+    el("div", { class: "meta" }, el("span", {}, sc.description_human), el("span", {}, sc.task_kind === "manual" ? "hatırlatma" : "BULUT yapar"),
+      el("span", {}, "sonraki: " + fmtTime(sc.next_run_at)), sc.created_by.startsWith("model") ? el("span", {}, "BULUT önerdi") : null,
+      sc.last_task_status ? el("span", {}, "son: " + (STATUS_TR[sc.last_task_status] || sc.last_task_status)) : null),
+    el("div", { class: "actions" },
+      el("button", { class: "btn small", onclick: async () => { await api("/api/schedules/" + sc.id, { method: "PATCH", body: { enabled: !sc.enabled } }); loadSchedules(); } }, sc.enabled ? "Kapat" : "Aç"),
+      el("button", { class: "btn small danger", onclick: async () => { if (confirm("Zamanlama silinsin mi? (Geçmiş görevler kalır)")) { await api("/api/schedules/" + sc.id, { method: "DELETE" }); loadSchedules(); } } }, "Sil"))))
+    : [el("p", { class: "muted small" }, "Zamanlanmış görev yok.")]));
+}
+let specT;
+$("#schedule-form [name=spec]").addEventListener("input", (e) => {
+  clearTimeout(specT);
+  specT = setTimeout(async () => {
+    const v = e.target.value.trim(); if (!v) { $("#schedule-preview").textContent = ""; return; }
+    try { const r = await api("/api/schedules/preview", { method: "POST", body: { spec: v } }); $("#schedule-preview").textContent = `${r.description} · sonraki: ${r.next.map(fmtTime).join(", ")}`; }
+    catch (err) { $("#schedule-preview").textContent = err.message; }
+  }, 300);
+});
+$("#schedule-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  if (f.get("task_kind") === "llm" && !confirm("Bu görev her çalışmada ücretli model çağrısı yapar. Zamanlansın mı?")) return;
+  try {
+    await api("/api/schedules", { method: "POST", body: { name: f.get("title").slice(0, 120), title: f.get("title"), spec: f.get("spec"),
+      task_kind: f.get("task_kind"), priority: Number(f.get("priority")) } });
+    e.target.reset(); $("#schedule-preview").textContent = ""; toast("Zamanlandı"); loadSchedules();
+  } catch (err) { toast(err.message, true); }
+});
 function taskItem(t) {
   const actions = [];
   if (["pending", "failed", "cancelled"].includes(t.status)) actions.push(el("button", { class: "btn small", onclick: () => setTask(t.id, "done") }, "Tamamlandı"));
@@ -249,7 +281,20 @@ function activityItem(a) {
   return el("li", { class: a.level }, el("time", {}, fmtTime(a.created_at)), el("div", {}, a.summary),
     a.detail ? el("details", {}, el("summary", {}, "Ayrıntı"), el("pre", {}, a.detail)) : null);
 }
+async function loadNotifications() {
+  const n = await api("/api/notifications?limit=30");
+  const CH = { sent: "✓", failed: "✗", pending: "…", skipped: "–" };
+  $("#notif-list").replaceChildren(...(n.items.length ? n.items.map((x) => el("div", { class: `item lvl-${x.level}` + (x.read_at ? "" : " unread") },
+    el("div", { class: "item-head" }, el("span", { class: "title" }, x.title), el("span", { class: "pill" }, x.level)),
+    x.body ? el("div", { class: "muted small" }, x.body.slice(0, 300)) : null,
+    el("div", { class: "meta" }, el("span", {}, fmtTime(x.created_at)),
+      ...(x.deliveries || []).map((d) => el("span", { title: d.last_error || "" }, `${d.channel} ${CH[d.status] || d.status}`)),
+      x.read_at ? null : el("button", { class: "btn small ghost", onclick: async () => { await api(`/api/notifications/${x.id}/read`, { method: "POST" }); loadNotifications(); refreshBadges(); } }, "Okundu"))))
+    : [el("p", { class: "muted small" }, "Bildirim yok. Mobil kanal: " + (n.channels.join(", ") || "yapılandırılmamış (yalnızca uygulama içi)"))]));
+}
+$("#notif-read-all").addEventListener("click", async () => { await api("/api/notifications/read-all", { method: "POST" }); loadNotifications(); refreshBadges(); });
 loaders.activity = async () => {
+  loadNotifications().catch((e) => toast(e.message, true));
   const rows = await api("/api/activity?limit=60");
   oldestActivity = rows.length ? rows[rows.length - 1].id : null;
   $("#activity-list").replaceChildren(...rows.map(activityItem));
@@ -377,9 +422,36 @@ loaders.system = async () => {
       el("dt", {}, "Görev işçisi"), el("dd", {}, s.worker.enabled ? "çalışıyor" : "kapalı"),
       el("dt", {}, "Web araması"), el("dd", {}, s.web.search_backend ? `${s.web.search_backend} · bugün ${s.web.searches_today}/${s.web.daily_limit}` : "yapılandırılmamış (sayfa okuma açık)"),
       el("dt", {}, "Günlük brifing"), el("dd", {}, s.briefing.time ? `${s.briefing.time} (${s.briefing.timezone})` : "kapalı"),
+      el("dt", {}, "Mobil bildirim"), el("dd", {}, s.notifications.channels.length ? `${s.notifications.channels.join(", ")} · en az ${s.notifications.min_level}` + (s.notifications.quiet ? ` · sessiz ${s.notifications.quiet}` : "") : "yapılandırılmamış (uygulama içi açık)"),
       el("dt", {}, "Cihazlar"), el("dd", {}, s.devices.map((d) => `${d.name}: ${d.status}`).join(" · ")),
       el("dt", {}, "Yedekler"), el("dd", {}, s.backups.slice(0, 3).join(", ") || "henüz yok")));
 };
+$("#check-providers").addEventListener("click", async (e) => {
+  e.target.disabled = true;
+  try {
+    const r = await api("/api/system/check-providers", { method: "POST" });
+    $("#provider-status").replaceChildren(...r.results.map((x) => el("div", { class: x.ok ? "ok" : "error" }, `${x.ok ? "✓" : "✗"} ${x.route}: ${x.message}`)),
+      r.usd_try_rate_set ? null : el("div", { class: "error" }, "! USD/TRY kuru girilmemiş: ücretli çağrılar kapalı."));
+  } catch (err) { toast(err.message, true); } finally { e.target.disabled = false; }
+});
+$("#notif-test").addEventListener("click", async () => {
+  try {
+    const r = await api("/api/notifications/test", { method: "POST" });
+    toast(r.channels.length ? r.deliveries.map((d) => `${d.channel}: ${d.status}${d.last_error ? " (" + d.last_error + ")" : ""}`).join(" · ") : "Mobil kanal yapılandırılmamış; yalnızca uygulama içi bildirim oluşturuldu.");
+    refreshBadges();
+  } catch (err) { toast(err.message, true); }
+});
+$("#live-test").addEventListener("click", async (e) => {
+  const c = prompt("GERÇEK API ile 3 kısa test yapılacak (sohbet, hafıza arama, görev oluşturma). Ücretlidir, tavan $0.05.\nOnaylamak için CANLI TEST yaz:");
+  if (c == null) return;
+  e.target.disabled = true; $("#live-result").textContent = "Çalışıyor…";
+  try {
+    const r = await api("/api/system/live-test", { method: "POST", body: { confirm: c } });
+    if (!r.ran) { $("#live-result").replaceChildren(el("div", { class: "error" }, "Çalıştırılmadı: " + r.reason)); return; }
+    $("#live-result").replaceChildren(el("div", {}, `${r.real_api ? "GERÇEK API" : "SAHTE sağlayıcı"} · ${r.route} · ${r.passed}/${r.results.length} geçti · ≈$${r.total_cost_usd.toFixed(5)}`),
+      ...r.results.map((x) => el("div", { class: x.status === "PASS" ? "ok" : "error" }, `[${x.status}] ${x.name}: ${x.detail || ""}`)));
+  } catch (err) { $("#live-result").textContent = ""; toast(err.message, true); } finally { e.target.disabled = false; }
+});
 $("#backup-now").addEventListener("click", async () => { try { const r = await api("/api/system/backup", { method: "POST" }); toast("Yedek: " + r.file); loaders.system(); } catch (e) { toast(e.message, true); } });
 
 /* ---------------- onaylar ---------------- */
@@ -399,8 +471,9 @@ async function decide(id, d) { try { const r = await api(`/api/approvals/${id}/$
 /* ---------------- rozetler ---------------- */
 async function refreshBadges() {
   try {
-    const [t, a] = await Promise.all([api("/api/tasks?status=failed"), api("/api/approvals?status=pending")]);
-    const bt = $("#badge-tasks"), ba = $("#badge-approvals");
+    const [t, a, n] = await Promise.all([api("/api/tasks?status=failed"), api("/api/approvals?status=pending"), api("/api/notifications?unread=1&limit=1")]);
+    const bt = $("#badge-tasks"), ba = $("#badge-approvals"), bn = $("#badge-activity");
+    bn.textContent = n.unread; bn.classList.toggle("hidden", !n.unread);
     bt.textContent = t.counts.failed; bt.classList.toggle("hidden", !t.counts.failed);
     ba.textContent = a.length; ba.classList.toggle("hidden", !a.length);
   } catch { /* sessiz */ }

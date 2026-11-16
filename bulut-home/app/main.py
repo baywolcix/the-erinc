@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import __version__, approvals, auth, briefing, chat, memory, notify, sysinfo, tasks
+from . import __version__, approvals, auth, briefing, chat, memory, notify, schedules, sysinfo, tasks
 from . import tools as _tools  # noqa: F401 — onay yürütücülerini kaydeder
 from .web import WebClient
 from .config import Settings, load_settings
@@ -73,6 +73,30 @@ class MemoryPatch(BaseModel):
     pinned: bool | None = None
 
 
+class ScheduleIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    spec: str = Field(min_length=3, max_length=60)
+    title: str = Field(min_length=1, max_length=300)
+    description: str = Field("", max_length=4000)
+    task_kind: str = "manual"
+    project_id: int | None = None
+    priority: int = Field(3, ge=1, le=5)
+
+
+class SchedulePatch(BaseModel):
+    name: str | None = Field(None, max_length=120)
+    spec: str | None = Field(None, max_length=60)
+    title: str | None = Field(None, max_length=300)
+    description: str | None = Field(None, max_length=4000)
+    task_kind: str | None = None
+    priority: int | None = Field(None, ge=1, le=5)
+    enabled: bool | None = None
+
+
+class SpecIn(BaseModel):
+    spec: str = Field(max_length=60)
+
+
 class LiveTestIn(BaseModel):
     confirm: str = Field(max_length=40)
 
@@ -126,7 +150,11 @@ async def _brief_scheduler_loop(st: State) -> None:
                 log_activity(st.db, "schedule", f"Günlük brifing görevi açıldı (#{t['id']})", ref=f"task:{t['id']}")
         except Exception as e:  # noqa: BLE001
             log_activity(st.db, "schedule_error", "Brifing zamanlayıcısı hatası", detail=str(e)[:500], level="error")
-        await asyncio.sleep(60)
+        try:
+            schedules.tick(st.db, st.settings.timezone)
+        except Exception as e:  # noqa: BLE001
+            log_activity(st.db, "schedule_error", "Zamanlayıcı hatası", detail=str(e)[:500], level="error")
+        await asyncio.sleep(30)
 
 
 async def _notify_loop(st: State) -> None:
@@ -505,6 +533,43 @@ def create_app(settings: Settings | None = None, providers: dict | None = None, 
     async def briefing_generate(user=Depends(current_user)):
         b = await briefing.generate(st.db, st.router, st.settings.timezone, st.settings.usd_try_rate)
         return {k: b[k] for k in ("id", "day", "content", "source", "note", "created_at")}
+
+    # ---------------- zamanlamalar ----------------
+    @app.get("/api/schedules")
+    def schedule_list(user=Depends(current_user)):
+        return schedules.list_all(st.db)
+
+    @app.post("/api/schedules/preview")
+    def schedule_preview(body: SpecIn, user=Depends(current_user)):
+        try:
+            return {"description": schedules.describe(body.spec), "next": schedules.upcoming(body.spec, st.settings.timezone)}
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+    @app.post("/api/schedules")
+    def schedule_create(body: ScheduleIn, user=Depends(current_user)):
+        # Sahibinin arayüzden oluşturması açık onaydır → doğrudan etkin.
+        try:
+            return schedules.create(st.db, body.name, body.spec, body.title, body.task_kind, body.description, body.project_id,
+                                    body.priority, created_by=user["username"], tz=st.settings.timezone)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+    @app.patch("/api/schedules/{sid}")
+    def schedule_patch(sid: int, body: SchedulePatch, user=Depends(current_user)):
+        try:
+            return schedules.update(st.db, sid, st.settings.timezone, **body.model_dump())
+        except KeyError as e:
+            raise HTTPException(404, str(e))
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+    @app.delete("/api/schedules/{sid}")
+    def schedule_delete(sid: int, user=Depends(current_user)):
+        if not schedules.delete(st.db, sid):
+            raise HTTPException(404, "Zamanlama yok")
+        log_activity(st.db, "schedule_deleted", f"Zamanlama #{sid} silindi")
+        return {"ok": True}
 
     # ---------------- bildirimler ----------------
     @app.get("/api/notifications")

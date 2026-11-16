@@ -8,7 +8,8 @@ const assert = (c, m) => { if (!c) throw new Error("ASSERT: " + m); };
   for (const [name, vp] of [["mobile", { width: 390, height: 844 }], ["desktop", { width: 1280, height: 800 }]]) {
     const ctx = await b.newContext({ viewport: vp });
     const page = await ctx.newPage();
-    page.on("console", (m) => { if (m.type() === "error") errors.push(`${name}: ${m.text()}`); });
+    // Kasıtlı doğrulama hataları (400: yazarken zamanlama önizlemesi, yanlış onay metni) hata sayılmaz
+    page.on("console", (m) => { if (m.type() === "error" && !m.text().includes("status of 400")) errors.push(`${name}: ${m.text()}`); });
     page.on("pageerror", (e) => errors.push(`${name}: ${e}`));
     await page.goto(URL);
     await page.fill("[name=username]", "umut");
@@ -47,6 +48,25 @@ const assert = (c, m) => { if (!c) throw new Error("ASSERT: " + m); };
       await page.waitForSelector("text=projesini sil");
       await page.click("#approval-list >> text=Reddet");
       await page.waitForSelector("#approval-list >> text=rejected");
+      // bildirim: proje silme onayı bildirim üretti → Aktivite rozeti ve kutu
+      await page.click("a[data-view=activity]");
+      await page.waitForSelector("#notif-list >> text=Onayın bekleniyor");
+      // zamanlanmış görev: önizleme + oluşturma
+      await page.click("a[data-view=tasks]");
+      await page.fill("#schedule-form [name=title]", "Bionluk ilanlarını kontrol et");
+      await page.fill("#schedule-form [name=spec]", "weekly mon,thu 09:00");
+      await page.waitForSelector("#schedule-preview >> text=Her Pzt, Per 09:00");
+      await page.click("#schedule-form button");
+      await page.waitForSelector("#schedule-list >> text=Bionluk ilanlarını kontrol et");
+      // sistem: ücretsiz kontrol + canlı test onay metni yanlışsa çalışmaz
+      await page.click("a[data-view=system]");
+      await page.click("#check-providers");
+      await page.waitForSelector("#provider-status >> text=anthropic:claude-haiku-5-5");
+      page.removeAllListeners("dialog");
+      page.once("dialog", (d) => d.accept("yanlış"));
+      await page.click("#live-test");
+      await page.waitForSelector("#toast >> text=Onay metni hatalı");
+      page.on("dialog", (d) => d.accept());
       // günlük brifing
       await page.click("a[data-view=reports]");
       await page.click("#brief-generate");

@@ -32,7 +32,7 @@
     <a data-view="chat" class="active"><i class="ic ic-chat"></i><span>Sohbet</span></a>
     <a data-view="tasks"><i class="ic ic-tasks"></i><span>Görevler</span><b class="badge hidden" id="badge-tasks"></b></a>
     <a data-view="projects"><i class="ic ic-projects"></i><span>Projeler</span></a>
-    <a data-view="activity"><i class="ic ic-activity"></i><span>Aktivite</span></a>
+    <a data-view="activity"><i class="ic ic-activity"></i><span>Aktivite</span><b class="badge hidden" id="badge-activity"></b></a>
     <a data-view="memory"><i class="ic ic-memory"></i><span>Hafıza</span></a>
     <a data-view="reports"><i class="ic ic-reports"></i><span>Raporlar</span></a>
     <a data-view="system"><i class="ic ic-system"></i><span>Sistem</span></a>
@@ -80,6 +80,18 @@
       </form>
       <div class="tabs" id="task-tabs"></div>
       <div id="task-list" class="list"></div>
+      <div class="card" id="schedule-card">
+        <h3>Zamanlanmış görevler</h3>
+        <form class="form-grid" id="schedule-form">
+          <input name="title" placeholder="Görev başlığı (ör. Bionluk ilanlarını kontrol et)" required maxlength="300">
+          <input name="spec" placeholder="daily 08:30 · weekly mon,thu 09:00 · every 6h" required maxlength="60">
+          <select name="task_kind"><option value="manual">Hatırlatma (elle)</option><option value="llm">BULUT yapsın (ücretli)</option></select>
+          <select name="priority"><option value="2">P2</option><option value="3" selected>P3</option><option value="4">P4</option></select>
+          <button class="btn primary">Zamanla</button>
+        </form>
+        <p class="muted small" id="schedule-preview"></p>
+        <div id="schedule-list" class="list"></div>
+      </div>
     </section>
 
     <!-- PROJELER -->
@@ -97,6 +109,11 @@
     <!-- AKTİVİTE -->
     <section class="view" id="view-activity">
       <header class="view-head"><h2>Aktivite Akışı</h2></header>
+      <div class="card" id="notif-card">
+        <div class="item-head"><h3 class="title">Bildirimler</h3>
+          <button class="btn small ghost" id="notif-read-all">Tümünü okundu say</button></div>
+        <div id="notif-list" class="list"></div>
+      </div>
       <ol class="timeline" id="activity-list"></ol>
       <button class="btn ghost" id="activity-more">Daha eski</button>
     </section>
@@ -135,6 +152,17 @@
       <header class="view-head"><h2>Sistem</h2><button class="btn ghost small" id="backup-now">Yedek al</button></header>
       <div class="grid stats" id="system-stats"></div>
       <div class="card" id="budget-card"></div>
+      <div class="card" id="setup-card">
+        <h3>Kurulum ve bağlantılar</h3>
+        <div id="provider-status" class="small"></div>
+        <div class="actions">
+          <button class="btn small" id="check-providers">Anahtarları kontrol et (ücretsiz)</button>
+          <button class="btn small" id="notif-test">Test bildirimi gönder</button>
+          <button class="btn small danger" id="live-test">Canlı API testi (ücretli)…</button>
+        </div>
+        <div id="live-result" class="small"></div>
+        <p class="muted small">Anahtarlar sunucuda <code>python3 scripts/configure.py</code> ile girilir; arayüzden girilmez ve hiçbir yerde gösterilmez.</p>
+      </div>
       <div class="card" id="system-detail"></div>
     </section>
 
