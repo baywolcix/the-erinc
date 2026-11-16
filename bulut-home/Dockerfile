@@ -2,12 +2,15 @@
 # BULUT HOME — Debian tabanlı hafif imaj (ASUS i3 / 8 GB RAM hedefi)
 # TLS denetimli bir vekil sunucu arkasında derliyorsan CA paketini gizli olarak ver:
 #   docker build --secret id=ca_bundle,src=/yol/ca.crt -t bulut-home .
-FROM python:3.13-slim-trixie
+# Docker Hub hız sınırına (429) takılırsan resmi aynayı kullan:
+#   docker build --build-arg BASE_IMAGE=mirror.gcr.io/library/python:3.13-slim-trixie ...
+ARG BASE_IMAGE=python:3.13-slim-trixie
+FROM ${BASE_IMAGE}
 
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
     BULUT_DATA_DIR=/data BULUT_ENV_FILE=/nonexistent
 
-RUN useradd --create-home --uid 1000 bulut
+RUN id -u bulut >/dev/null 2>&1 || useradd --create-home --uid 1000 bulut
 WORKDIR /srv/bulut
 COPY requirements.txt .
 RUN --mount=type=secret,id=ca_bundle,required=false \
