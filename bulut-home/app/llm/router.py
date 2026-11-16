@@ -131,6 +131,18 @@ class LLMRouter:
             self._reserved_usd += worst
         return worst
 
+    def _budget_notify(self, blocked: bool = False) -> None:
+        from ..notify import budget_check
+        rate = self.settings.usd_try_rate
+        if not rate:
+            return
+        spent = self.month_spend_usd()["usd"] * rate
+        try:
+            budget_check(self.db, max(spent, self.settings.monthly_budget_try) if blocked else spent,
+                         self.settings.monthly_budget_try)
+        except Exception:  # noqa: BLE001 — bildirim hatası çağrıyı bozmasın
+            pass
+
     def _release(self, amount: float) -> None:
         with self._reserve_lock:
             self._reserved_usd = max(0.0, self._reserved_usd - amount)
@@ -251,8 +263,11 @@ class LLMRouter:
                 call_id = self._record(route, purpose, res, None, int((time.monotonic() - t0) * 1000))
             finally:
                 self._release(reserved)
+            self._budget_notify()
             res.extra["route"] = str(route)
             return res, call_id
+        if budget_errors and not errors:
+            self._budget_notify(blocked=True)
         if errors:
             raise ProvidersFailed("Tüm sağlayıcılar başarısız: " + " | ".join(errors), any_retryable)
         if budget_errors:

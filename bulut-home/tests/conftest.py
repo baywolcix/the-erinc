@@ -86,3 +86,11 @@ def client(make_client, fake):
         c.app_state = app.state.bulut
         c.fake = fake
         yield c
+
+
+@pytest.fixture(autouse=True)
+def _reset_notify():
+    from app import notify
+    notify.configure(notify.NotifyConfig())
+    yield
+    notify.configure(notify.NotifyConfig())

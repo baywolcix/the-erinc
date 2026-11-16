@@ -48,6 +48,15 @@ class Settings:
     web_trust_proxy_dns: bool = False
     brief_time: str = "08:30"           # yerel saat, boş = kapalı
     timezone: str = "Europe/Istanbul"
+    ntfy_url: str = "https://ntfy.sh"
+    ntfy_topic: str = ""
+    ntfy_token: str = ""
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+    notify_min_level: str = "important"
+    notify_details: bool = True
+    notify_quiet: str = ""
+    public_url: str = ""
 
     @property
     def db_path(self) -> Path:
@@ -91,4 +100,13 @@ def load_settings() -> Settings:
         web_trust_proxy_dns=os.environ.get("BULUT_WEB_TRUST_PROXY_DNS", "0") == "1",
         brief_time=os.environ.get("BULUT_BRIEF_TIME", "08:30").strip(),
         timezone=os.environ.get("BULUT_TIMEZONE", "Europe/Istanbul"),
+        ntfy_url=os.environ.get("NTFY_URL", "").strip() or "https://ntfy.sh",
+        ntfy_topic=os.environ.get("NTFY_TOPIC", "").strip(),
+        ntfy_token=os.environ.get("NTFY_TOKEN", "").strip(),
+        telegram_bot_token=os.environ.get("TELEGRAM_BOT_TOKEN", "").strip(),
+        telegram_chat_id=os.environ.get("TELEGRAM_CHAT_ID", "").strip(),
+        notify_min_level=os.environ.get("BULUT_NOTIFY_MIN_LEVEL", "important").strip() or "important",
+        notify_details=os.environ.get("BULUT_NOTIFY_DETAILS", "1") != "0",
+        notify_quiet=os.environ.get("BULUT_NOTIFY_QUIET", "").strip(),
+        public_url=os.environ.get("BULUT_PUBLIC_URL", "").strip(),
     )

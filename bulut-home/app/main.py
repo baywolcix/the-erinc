@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import __version__, approvals, auth, briefing, chat, memory, sysinfo, tasks
+from . import __version__, approvals, auth, briefing, chat, memory, notify, sysinfo, tasks
 from . import tools as _tools  # noqa: F401 — onay yürütücülerini kaydeder
 from .web import WebClient
 from .config import Settings, load_settings
@@ -129,14 +129,31 @@ async def _brief_scheduler_loop(st: State) -> None:
         await asyncio.sleep(60)
 
 
+async def _notify_loop(st: State) -> None:
+    while True:
+        try:
+            await notify.deliver_pending(st.db)
+        except Exception as e:  # noqa: BLE001
+            log_activity(st.db, "notify_error", "Bildirim teslim döngüsü hatası", detail=str(e)[:500], level="error")
+        await asyncio.sleep(10)
+
+
 def create_app(settings: Settings | None = None, providers: dict | None = None, start_worker: bool | None = None,
-               web: WebClient | None = None) -> FastAPI:
+               web: WebClient | None = None, notify_config: "notify.NotifyConfig | None" = None) -> FastAPI:
     st = State()
     st.settings = settings or load_settings()
     from .redact import install_logging_filter, register
     register(st.settings.secret_key, st.settings.anthropic_api_key, st.settings.compat_api_key,
-             st.settings.brave_api_key)
+             st.settings.brave_api_key, st.settings.ntfy_token, st.settings.telegram_bot_token)
     install_logging_filter()
+    if notify_config is not None:
+        notify.configure(notify_config)
+    else:
+        S = st.settings
+        notify.configure(notify.NotifyConfig(
+            ntfy_url=S.ntfy_url, ntfy_topic=S.ntfy_topic, ntfy_token=S.ntfy_token, telegram_bot_token=S.telegram_bot_token,
+            telegram_chat_id=S.telegram_chat_id, min_level=S.notify_min_level, details=S.notify_details,
+            quiet=S.notify_quiet, timezone=S.timezone, public_url=S.public_url))
     st.db = Database(st.settings.db_path)
     st.db.init()
     st.router = LLMRouter(st.db, st.settings, providers if providers is not None else build_providers(st.settings))
@@ -160,6 +177,7 @@ def create_app(settings: Settings | None = None, providers: dict | None = None, 
             bg.append(asyncio.create_task(st.worker.run_forever()))
             bg.append(asyncio.create_task(_daily_backup_loop(st)))
             bg.append(asyncio.create_task(_brief_scheduler_loop(st)))
+            bg.append(asyncio.create_task(_notify_loop(st)))
         log_activity(st.db, "system", f"BULUT HOME {__version__} başlatıldı")
         yield
         if st.worker:
@@ -466,6 +484,8 @@ def create_app(settings: Settings | None = None, providers: dict | None = None, 
             "web": {"search_backend": st.web.search_backend, "fetch": True,
                     "searches_today": st.web.searches_today(), "daily_limit": st.settings.web_daily_limit},
             "briefing": {"time": st.settings.brief_time or None, "timezone": st.settings.timezone},
+            "notifications": {"channels": notify.config().channels(), "min_level": notify.config().min_level,
+                              "quiet": notify.config().quiet or None, "details": notify.config().details},
             "tasks": tasks.counts(st.db),
             "pending_approvals": st.db.one("SELECT COUNT(*) AS n FROM approvals WHERE status='pending'")["n"],
             "devices": [{"name": "BULUT HOME (bu sunucu)", "status": "online"},
@@ -485,6 +505,27 @@ def create_app(settings: Settings | None = None, providers: dict | None = None, 
     async def briefing_generate(user=Depends(current_user)):
         b = await briefing.generate(st.db, st.router, st.settings.timezone, st.settings.usd_try_rate)
         return {k: b[k] for k in ("id", "day", "content", "source", "note", "created_at")}
+
+    # ---------------- bildirimler ----------------
+    @app.get("/api/notifications")
+    def notifications(unread: int = 0, limit: int = 50, user=Depends(current_user)):
+        return notify.list_notifications(st.db, bool(unread), max(1, min(limit, 200)))
+
+    @app.post("/api/notifications/read-all")
+    def notifications_read_all(user=Depends(current_user)):
+        return {"marked": notify.mark_read(st.db)}
+
+    @app.post("/api/notifications/{nid}/read")
+    def notification_read(nid: int, user=Depends(current_user)):
+        return {"marked": notify.mark_read(st.db, nid)}
+
+    @app.post("/api/notifications/test")
+    async def notification_test(user=Depends(current_user)):
+        nid = notify.notify(st.db, "test", "BULUT test bildirimi", "Bu mesajı görüyorsan mobil bildirimler çalışıyor.",
+                            "critical", "system:test")
+        stats = await notify.deliver_pending(st.db)
+        return {"id": nid, "channels": notify.config().channels(), "delivery": stats,
+                "deliveries": st.db.query("SELECT channel, status, last_error FROM notification_deliveries WHERE notification_id=?", (nid,))}
 
     @app.get("/api/web/sources")
     def web_sources(limit: int = 100, user=Depends(current_user)):

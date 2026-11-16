@@ -180,6 +180,14 @@ class TaskWorker:
                 t.execute("UPDATE tasks SET status='done', output=?, last_error=NULL, locked_by=NULL, finished_at=?, updated_at=? "
                           "WHERE id=?", (output, ts, ts, tid))
             log_activity(self.db, "task_done", f"Görev tamamlandı: {task['title']}", ref=f"task:{tid}")
+            from .notify import notify
+            if task["kind"] == "brief":
+                notify(self.db, "briefing_ready", "Günlük brifing hazır", (output or "")[:600], "important",
+                       f"task:{tid}", dedupe_key=f"notify:task_done:{tid}")
+            else:
+                important = task["kind"] in ("llm", "plan") or task["priority"] <= 2
+                notify(self.db, "task_done", f"Görev tamamlandı: {task['title']}", (output or "")[:400],
+                       "important" if important else "info", f"task:{tid}", dedupe_key=f"notify:task_done:{tid}")
         except Exception as e:  # noqa: BLE001 — her hata kaydedilmeli
             self._fail(task, e)
         return get(self.db, tid)
@@ -195,6 +203,9 @@ class TaskWorker:
                 t.execute("UPDATE tasks SET status='failed', last_error=?, locked_by=NULL, finished_at=?, updated_at=? WHERE id=?",
                           (msg, ts, ts, tid))
             log_activity(self.db, "task_failed", f"Görev başarısız: {task['title']}", detail=msg, ref=f"task:{tid}", level="error")
+            from .notify import notify
+            notify(self.db, "task_failed", f"Görev başarısız: {task['title']}", msg[:400], "critical", f"task:{tid}",
+                   dedupe_key=f"notify:task_failed:{tid}:{task['attempts']}")
         else:
             delay = 30 * (2 ** (task["attempts"] - 1))
             nxt = (datetime.now(timezone.utc) + timedelta(seconds=delay)).isoformat(timespec="seconds")

@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -196,6 +196,60 @@ CREATE TABLE IF NOT EXISTS briefings (
     note TEXT,
     llm_call_id INTEGER REFERENCES llm_calls(id),
     created_at TEXT NOT NULL
+);
+
+-- v3: bildirimler ve genel zamanlanmış görevler
+CREATE TABLE IF NOT EXISTS notifications (
+    id INTEGER PRIMARY KEY,
+    event TEXT NOT NULL,
+    level TEXT NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL DEFAULT '',
+    ref TEXT,
+    dedupe_key TEXT UNIQUE,
+    created_at TEXT NOT NULL,
+    read_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications(read_at, id);
+CREATE TABLE IF NOT EXISTS notification_deliveries (
+    id INTEGER PRIMARY KEY,
+    notification_id INTEGER NOT NULL REFERENCES notifications(id) ON DELETE CASCADE,
+    channel TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('pending','sent','failed','skipped')),
+    attempts INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at TEXT,
+    last_error TEXT,
+    sent_at TEXT,
+    UNIQUE(notification_id, channel)
+);
+CREATE INDEX IF NOT EXISTS idx_deliveries_pending ON notification_deliveries(status, next_attempt_at);
+
+CREATE TABLE IF NOT EXISTS schedules (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    spec TEXT NOT NULL,               -- "daily 08:30" | "weekly mon,thu 09:00" | "monthly 1 10:00" | "every 6h"
+    task_kind TEXT NOT NULL DEFAULT 'manual',
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL,
+    priority INTEGER NOT NULL DEFAULT 3,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    next_run_at TEXT,
+    last_run_at TEXT,
+    last_task_id INTEGER,
+    created_by TEXT NOT NULL DEFAULT 'user',
+    approval_id INTEGER REFERENCES approvals(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_schedules_due ON schedules(enabled, next_run_at);
+CREATE TABLE IF NOT EXISTS schedule_runs (
+    schedule_id INTEGER NOT NULL REFERENCES schedules(id) ON DELETE CASCADE,
+    slot TEXT NOT NULL,               -- planlanan çalışma zamanı (UTC); aynı slot iki kez çalışmaz
+    task_id INTEGER,
+    status TEXT NOT NULL,             -- created | skipped_active
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (schedule_id, slot)
 );
 """
 

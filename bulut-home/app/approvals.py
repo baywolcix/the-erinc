@@ -52,6 +52,9 @@ def request(db: Database, action: str, summary: str, payload: dict | None = None
         )
         aid = cur.lastrowid
     log_activity(db, "approval_requested", f"Onay bekleniyor: {summary}", ref=f"approval:{aid}", level="warn")
+    from .notify import notify
+    notify(db, "approval_requested", "Onayın bekleniyor", f"{CRITICAL_ACTIONS[action]}: {summary}", "critical",
+           f"approval:{aid}", dedupe_key=f"notify:approval:{aid}")
     return aid
 
 
