@@ -45,9 +45,10 @@ class AnthropicProvider:
     # Sunucu tarafı reddetme yedeği (refusal fallback) desteklenen modeller
     _FALLBACK_MODELS = {"claude-sonnet-5-5", "claude-opus-5-5", "claude-fable-5-2"}
 
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, http_client=None):
         self._api_key = api_key
         self._client = None
+        self._http_client = http_client  # testler için
 
     def available(self) -> bool:
         return bool(self._api_key)
@@ -59,7 +60,8 @@ class AnthropicProvider:
         if self._client is None:
             import anthropic
             # Yeniden denemeyi router yönetir; SDK'da 1 deneme yeterli.
-            self._client = anthropic.AsyncAnthropic(api_key=self._api_key, max_retries=1, timeout=120.0)
+            kw = {"http_client": self._http_client} if self._http_client is not None else {}
+            self._client = anthropic.AsyncAnthropic(api_key=self._api_key, max_retries=1, timeout=120.0, **kw)
         return self._client
 
     async def complete(self, *, model, system, messages, max_tokens, effort) -> LLMResult:

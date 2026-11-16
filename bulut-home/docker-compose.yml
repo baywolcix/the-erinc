@@ -1,0 +1,19 @@
+# Kullanım: cp .env.example .env && (düzenle) && docker compose up -d --build
+# Varsayılan olarak yalnızca 127.0.0.1'e bağlanır. Telefondan erişim için Tailscale Serve kullan (README).
+services:
+  bulut:
+    build: .
+    container_name: bulut-home
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      BULUT_DATA_DIR: /data
+    volumes:
+      - ./data:/data
+    ports:
+      - "127.0.0.1:8080:8080"
+    mem_limit: 512m
+    cpus: 1.5
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }

@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0f17">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>BULUT HOME</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/icon.svg">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<div id="auth" class="auth hidden">
+  <form id="auth-form" class="auth-card">
+    <div class="brand-mark big" aria-hidden="true"></div>
+    <h1>BULUT HOME</h1>
+    <p id="auth-hint" class="muted">Giriş yap</p>
+    <label>Kullanıcı adı<input name="username" autocomplete="username" required></label>
+    <label>Parola<input name="password" type="password" autocomplete="current-password" required minlength="1"></label>
+    <label id="setup-token-row" class="hidden">Kurulum kodu<input name="setup_token" autocomplete="off"></label>
+    <button class="btn primary" type="submit">Devam</button>
+    <p id="auth-error" class="error"></p>
+  </form>
+</div>
+
+<div id="app" class="app hidden">
+  <nav class="nav" id="nav">
+    <div class="nav-brand"><div class="brand-mark" aria-hidden="true"></div><span>BULUT</span></div>
+    <a data-view="chat" class="active"><i class="ic ic-chat"></i><span>Sohbet</span></a>
+    <a data-view="tasks"><i class="ic ic-tasks"></i><span>Görevler</span><b class="badge hidden" id="badge-tasks"></b></a>
+    <a data-view="projects"><i class="ic ic-projects"></i><span>Projeler</span></a>
+    <a data-view="activity"><i class="ic ic-activity"></i><span>Aktivite</span></a>
+    <a data-view="memory"><i class="ic ic-memory"></i><span>Hafıza</span></a>
+    <a data-view="reports"><i class="ic ic-reports"></i><span>Raporlar</span></a>
+    <a data-view="system"><i class="ic ic-system"></i><span>Sistem</span></a>
+    <a data-view="approvals"><i class="ic ic-approvals"></i><span>Onaylar</span><b class="badge hidden" id="badge-approvals"></b></a>
+    <button class="nav-logout" id="logout" title="Çıkış">Çıkış</button>
+  </nav>
+
+  <main class="main">
+    <!-- SOHBET -->
+    <section class="view active" id="view-chat">
+      <header class="view-head">
+        <button class="btn ghost small" id="conv-toggle" aria-label="Konuşmalar">☰</button>
+        <h2 id="conv-title">Yeni konuşma</h2>
+        <button class="btn ghost small" id="conv-new">Yeni</button>
+      </header>
+      <aside class="conv-list hidden" id="conv-list"></aside>
+      <div class="messages" id="messages">
+        <div class="empty" id="chat-empty">
+          <div class="brand-mark big" aria-hidden="true"></div>
+          <p>Ben BULUT. Ne üzerinde çalışıyoruz?</p>
+          <div class="chips" id="suggestions"></div>
+        </div>
+      </div>
+      <form class="composer" id="composer">
+        <button type="button" class="btn icon" id="mic" title="Bas-konuş (tarayıcı konuşma tanıma)" aria-label="Bas-konuş">🎙</button>
+        <textarea id="input" rows="1" placeholder="BULUT'a yaz…" maxlength="20000"></textarea>
+        <select id="tier" title="Model katmanı" aria-label="Model katmanı">
+          <option value="">Oto</option><option value="fast">Hızlı</option><option value="smart">Akıllı</option>
+        </select>
+        <button class="btn primary" id="send" type="submit">Gönder</button>
+      </form>
+      <label class="tts-toggle"><input type="checkbox" id="tts"> Yanıtları sesli oku</label>
+    </section>
+
+    <!-- GÖREVLER -->
+    <section class="view" id="view-tasks">
+      <header class="view-head"><h2>Görev Merkezi</h2></header>
+      <form class="card form-grid" id="task-form">
+        <input name="title" placeholder="Yeni görev başlığı" required maxlength="300">
+        <select name="kind" id="task-kind"></select>
+        <select name="project_id" id="task-project"><option value="">Proje yok</option></select>
+        <select name="priority"><option value="1">P1</option><option value="2">P2</option><option value="3" selected>P3</option><option value="4">P4</option><option value="5">P5</option></select>
+        <textarea name="description" placeholder="Açıklama (isteğe bağlı)" rows="2" maxlength="10000"></textarea>
+        <button class="btn primary">Ekle</button>
+      </form>
+      <div class="tabs" id="task-tabs"></div>
+      <div id="task-list" class="list"></div>
+    </section>
+
+    <!-- PROJELER -->
+    <section class="view" id="view-projects">
+      <header class="view-head"><h2>Projeler</h2></header>
+      <div id="project-list" class="grid"></div>
+      <form class="card form-grid" id="project-form">
+        <input name="name" placeholder="Proje adı" required maxlength="120">
+        <input name="slug" placeholder="kisa-ad" required pattern="[a-z0-9-]+" maxlength="60">
+        <input name="description" placeholder="Kısa açıklama" maxlength="2000">
+        <button class="btn primary">Proje ekle</button>
+      </form>
+    </section>
+
+    <!-- AKTİVİTE -->
+    <section class="view" id="view-activity">
+      <header class="view-head"><h2>Aktivite Akışı</h2></header>
+      <ol class="timeline" id="activity-list"></ol>
+      <button class="btn ghost" id="activity-more">Daha eski</button>
+    </section>
+
+    <!-- HAFIZA -->
+    <section class="view" id="view-memory">
+      <header class="view-head"><h2>Hafıza</h2></header>
+      <form class="card form-grid" id="memory-form">
+        <input name="content" placeholder="BULUT'un bilmesi gereken bir şey…" required maxlength="4000">
+        <select name="kind"><option value="fact">Bilgi</option><option value="preference">Tercih</option><option value="goal">Hedef</option><option value="decision">Karar</option><option value="project">Proje</option><option value="date">Tarih</option><option value="note">Not</option></select>
+        <label class="check"><input type="checkbox" name="pinned"> Her zaman hatırla</label>
+        <button class="btn primary">Kaydet</button>
+      </form>
+      <div class="row"><input id="memory-search" type="search" placeholder="Hafızada ara…"><button class="btn danger small" id="memory-clear">Tümünü sil…</button></div>
+      <div id="memory-list" class="list"></div>
+    </section>
+
+    <!-- RAPORLAR -->
+    <section class="view" id="view-reports">
+      <header class="view-head"><h2>Raporlar</h2></header>
+      <div class="grid stats" id="report-stats"></div>
+      <div class="card"><h3>Günlük AI maliyeti (son 14 gün)</h3><div class="bars" id="cost-chart"></div><p class="muted small" id="cost-note"></p></div>
+      <div class="card"><h3>Görevler (son 14 gün)</h3><div class="bars" id="task-chart"></div></div>
+      <div class="card" id="today-detail"></div>
+    </section>
+
+    <!-- SİSTEM -->
+    <section class="view" id="view-system">
+      <header class="view-head"><h2>Sistem</h2><button class="btn ghost small" id="backup-now">Yedek al</button></header>
+      <div class="grid stats" id="system-stats"></div>
+      <div class="card" id="budget-card"></div>
+      <div class="card" id="system-detail"></div>
+    </section>
+
+    <!-- ONAYLAR -->
+    <section class="view" id="view-approvals">
+      <header class="view-head"><h2>Onay Merkezi</h2></header>
+      <p class="muted">Para harcama, veri silme, hesap ayarı ve geri alınamaz işlemler burada senin onayını bekler. Onay kodda zorunludur.</p>
+      <div id="approval-list" class="list"></div>
+    </section>
+  </main>
+</div>
+<div id="toast" class="toast hidden" role="status"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>
