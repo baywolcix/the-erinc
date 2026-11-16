@@ -288,8 +288,9 @@ class Database:
 
 def log_activity(db: Database, kind: str, summary: str, detail: str | None = None,
                  ref: str | None = None, level: str = "info") -> None:
+    from .redact import redact
     with db.tx() as t:
         t.execute(
             "INSERT INTO activity(kind,summary,detail,ref,level,created_at) VALUES (?,?,?,?,?,?)",
-            (kind, summary, detail, ref, level, now_iso()),
+            (kind, redact(summary), redact(detail), ref, level, now_iso()),
         )

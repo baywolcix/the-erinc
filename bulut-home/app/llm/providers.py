@@ -78,6 +78,25 @@ class AnthropicProvider:
             self._client = anthropic.AsyncAnthropic(api_key=self._api_key, max_retries=1, timeout=120.0, **kw)
         return self._client
 
+    async def check(self, model: str) -> dict:
+        """Anahtarı ve model erişimini token harcamadan doğrular (Models API)."""
+        import anthropic
+        if not self.available():
+            return {"ok": False, "configured": False, "message": "ANTHROPIC_API_KEY ayarlı değil"}
+        try:
+            m = await self._get_client().models.retrieve(model)
+            return {"ok": True, "configured": True, "model": m.id, "message": f"Anahtar geçerli, {m.id} erişilebilir"}
+        except anthropic.AuthenticationError:
+            return {"ok": False, "configured": True, "message": "Anahtar reddedildi (401). Anahtarı kontrol et."}
+        except anthropic.PermissionDeniedError:
+            return {"ok": False, "configured": True, "message": "Anahtarın bu modele erişim izni yok (403)."}
+        except anthropic.NotFoundError:
+            return {"ok": False, "configured": True, "message": f"Model bulunamadı: {model}"}
+        except anthropic.APIConnectionError as e:
+            return {"ok": False, "configured": True, "message": f"Bağlantı hatası: {type(e).__name__}"}
+        except anthropic.APIStatusError as e:
+            return {"ok": False, "configured": True, "message": f"API hatası {e.status_code}"}
+
     async def complete(self, *, model, system, messages, max_tokens, effort, tools=None) -> LLMResult:
         import anthropic
 
@@ -156,6 +175,26 @@ class OpenAICompatProvider:
 
     def price(self, model: str) -> Price | None:
         return self._price
+
+    async def check(self, model: str) -> dict:
+        import httpx2
+        if not self.available():
+            return {"ok": False, "configured": False, "message": "OPENAI_COMPAT_* ayarlı değil"}
+        try:
+            async with httpx2.AsyncClient(timeout=20.0, transport=self._transport) as c:
+                r = await c.get(f"{self._base_url}/models", headers={"Authorization": f"Bearer {self._api_key}"})
+        except httpx2.HTTPError as e:
+            return {"ok": False, "configured": True, "message": f"Bağlantı hatası: {type(e).__name__}"}
+        if r.status_code in (401, 403):
+            return {"ok": False, "configured": True, "message": f"Anahtar reddedildi ({r.status_code})"}
+        if r.status_code >= 400:
+            return {"ok": False, "configured": True, "message": f"API hatası {r.status_code}"}
+        ids = [m.get("id") for m in (r.json().get("data") or []) if isinstance(m, dict)]
+        target = self.resolve_model(model)
+        found = target in ids if ids else None
+        return {"ok": found is not False, "configured": True, "model": target,
+                "message": "Anahtar geçerli" + ("" if found is None else (f", {target} listede" if found else f", ama {target} listede yok")),
+                "price_known": self._price is not None}
 
     async def complete(self, *, model, system, messages, max_tokens, effort, tools=None) -> LLMResult:
         import httpx2

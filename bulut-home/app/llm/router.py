@@ -11,6 +11,7 @@ from ..config import Settings
 from ..db import Database, now_iso, log_activity
 
 from .pricing import cost_usd, worst_case_usd
+from ..redact import redact
 from .providers import REFUSAL_FALLBACK, LLMResult, Provider, ProviderError
 
 # Karmaşıklık işaretleri: bunlar geçerse akıllı katman
@@ -155,7 +156,7 @@ class LLMRouter:
                     res.input_tokens if res else 0, res.output_tokens if res else 0,
                     res.cache_read_tokens if res else 0, res.cache_write_tokens if res else 0,
                     cost, 0 if (res is not None and cost is None) else 1,
-                    1 if res else 0, err, latency_ms, now_iso(),
+                    1 if res else 0, redact(err), latency_ms, now_iso(),
                 ),
             )
             return cur.lastrowid
@@ -175,6 +176,25 @@ class LLMRouter:
             return total
         return cost_usd(provider.price(model), res.input_tokens, res.output_tokens,
                         res.cache_read_tokens, res.cache_write_tokens)
+
+    async def check_providers(self) -> list[dict]:
+        """Her yapılandırılmış rota için ücretsiz bağlantı kontrolü (token harcamaz)."""
+        out, seen = [], set()
+        for spec in [self.settings.model_fast, self.settings.model_smart, *self.settings.model_fallbacks]:
+            r = Route.parse(spec)
+            if str(r) in seen:
+                continue
+            seen.add(str(r))
+            p = self.providers.get(r.provider)
+            if p is None:
+                out.append({"route": str(r), "ok": False, "configured": False, "message": "Bilinmeyen sağlayıcı"})
+                continue
+            res = await p.check(r.model) if hasattr(p, "check") else {"ok": p.available(), "configured": p.available(),
+                                                                         "message": "kontrol desteklenmiyor"}
+            res["route"] = str(r)
+            res["message"] = redact(res.get("message"))
+            out.append(res)
+        return out
 
     # ---------- ana çağrı ----------
     def chain(self, tier: str) -> list[Route]:
@@ -220,7 +240,7 @@ class LLMRouter:
             except ProviderError as e:
                 self._release(reserved)
                 self._record(route, purpose, None, str(e)[:500], int((time.monotonic() - t0) * 1000))
-                errors.append(f"{route}: {e}")
+                errors.append(f"{route}: {redact(e)}")
                 any_retryable = any_retryable or e.retryable
                 log_activity(self.db, "llm_error", f"{route} başarısız, sıradaki deneniyor", str(e)[:500], level="warn")
                 continue

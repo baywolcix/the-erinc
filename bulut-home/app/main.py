@@ -73,6 +73,10 @@ class MemoryPatch(BaseModel):
     pinned: bool | None = None
 
 
+class LiveTestIn(BaseModel):
+    confirm: str = Field(max_length=40)
+
+
 class State:
     settings: Settings
     db: Database
@@ -129,6 +133,10 @@ def create_app(settings: Settings | None = None, providers: dict | None = None, 
                web: WebClient | None = None) -> FastAPI:
     st = State()
     st.settings = settings or load_settings()
+    from .redact import install_logging_filter, register
+    register(st.settings.secret_key, st.settings.anthropic_api_key, st.settings.compat_api_key,
+             st.settings.brave_api_key)
+    install_logging_filter()
     st.db = Database(st.settings.db_path)
     st.db.init()
     st.router = LLMRouter(st.db, st.settings, providers if providers is not None else build_providers(st.settings))
@@ -488,6 +496,25 @@ def create_app(settings: Settings | None = None, providers: dict | None = None, 
         if context:
             return st.db.query("SELECT * FROM tool_calls WHERE context=? ORDER BY id DESC LIMIT ?", (context, limit))
         return st.db.query("SELECT * FROM tool_calls ORDER BY id DESC LIMIT ?", (limit,))
+
+    @app.post("/api/system/check-providers")
+    async def check_providers(user=Depends(current_user)):
+        """Ücretsiz: token harcamadan anahtar/model erişimi kontrolü."""
+        return {"results": await st.router.check_providers(), "usd_try_rate_set": bool(st.settings.usd_try_rate)}
+
+    @app.get("/api/system/live-tests")
+    def live_tests(user=Depends(current_user)):
+        from .livetest import list_reports
+        return list_reports(st.settings)
+
+    @app.post("/api/system/live-test")
+    async def live_test(body: LiveTestIn, user=Depends(current_user)):
+        """ÜCRETLİ: gerçek API ile canlı test. Kullanıcının açık onay metni zorunlu."""
+        if body.confirm.strip() != "CANLI TEST":
+            raise HTTPException(400, "Onay metni hatalı. Ücretli canlı test için 'CANLI TEST' yaz.")
+        from .livetest import run_live
+        log_activity(st.db, "live_test", f"Canlı API testi {user['username']} tarafından başlatıldı")
+        return await run_live(st.settings, st.db, st.router)
 
     @app.post("/api/system/backup")
     async def backup_now(user=Depends(current_user)):

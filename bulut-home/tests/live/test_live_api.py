@@ -1,11 +1,13 @@
-"""GERÇEK API testleri — ücretlidir. Yalnızca açıkça istendiğinde çalışır:
+"""GERÇEK API testleri — ücretlidir (toplam < $0.05 sert tavan). Yalnızca açıkça istendiğinde çalışır:
 
-    BULUT_LIVE_TESTS=1 ANTHROPIC_API_KEY=... python -m pytest -m live tests/live
+    BULUT_LIVE_TESTS=1 python -m pytest -m live tests/live        (anahtarlar .env'den veya ortamdan)
 
-Her test tek, kısa bir çağrı yapar (Haiku 5.5, max_tokens küçük): tahmini maliyet < 0.01 USD.
+Önerilen yol: `python -m app.cli live-test` (onay sorar, rapor yazar).
 """
 import asyncio
 import os
+import tempfile
+from pathlib import Path
 
 import pytest
 
@@ -15,32 +17,31 @@ pytestmark = [
 ]
 
 
-@pytest.mark.skipif(not os.environ.get("ANTHROPIC_API_KEY"), reason="ANTHROPIC_API_KEY yok")
-def test_live_anthropic_haiku():
-    from app.llm.providers import AnthropicProvider
-    p = AnthropicProvider(os.environ["ANTHROPIC_API_KEY"])
-    res = asyncio.run(p.complete(model="claude-haiku-5-5", system="Kısa yanıt ver.",
-                                 messages=[{"role": "user", "content": "Sadece 'tamam' yaz."}], max_tokens=200, effort="low"))
-    assert res.text.strip() and res.input_tokens > 0 and res.output_tokens > 0
+@pytest.fixture(scope="module")
+def live_report():
+    from app.config import load_settings
+    from app.db import Database
+    from app.livetest import run_live
+    from app.llm.router import LLMRouter
+    from app.main import build_providers
+    s = load_settings()
+    if not s.anthropic_api_key and not s.compat_api_key:
+        pytest.skip("API anahtarı yok")
+    db = Database(s.db_path); db.init()
+    rep = asyncio.run(run_live(s, db, LLMRouter(db, s, build_providers(s))))
+    if not rep["ran"]:
+        pytest.skip(rep["reason"])
+    assert rep["real_api"] is True
+    return {r["name"]: r for r in rep["results"]}
 
 
-@pytest.mark.skipif(not os.environ.get("ANTHROPIC_API_KEY"), reason="ANTHROPIC_API_KEY yok")
-def test_live_anthropic_tool_use():
-    from app.llm.providers import AnthropicProvider
-    p = AnthropicProvider(os.environ["ANTHROPIC_API_KEY"])
-    tools = [{"name": "list_tasks", "description": "Görevleri listeler.",
-              "input_schema": {"type": "object", "properties": {}, "additionalProperties": False}}]
-    res = asyncio.run(p.complete(model="claude-haiku-5-5", system="Görev sorulursa list_tasks aracını kullan.",
-                                 messages=[{"role": "user", "content": "Açık görevlerim neler?"}], max_tokens=500,
-                                 effort="low", tools=tools))
-    assert res.stop_reason in ("tool_use", "end_turn")
+def test_live_chat(live_report):
+    assert live_report["chat"]["status"] == "PASS", live_report["chat"]
 
 
-@pytest.mark.skipif(not os.environ.get("OPENAI_COMPAT_API_KEY"), reason="OPENAI_COMPAT_API_KEY yok")
-def test_live_openai_compat():
-    from app.llm.providers import OpenAICompatProvider
-    p = OpenAICompatProvider(os.environ["OPENAI_COMPAT_API_KEY"], os.environ["OPENAI_COMPAT_BASE_URL"],
-                             os.environ["OPENAI_COMPAT_MODEL"], None, None)
-    res = asyncio.run(p.complete(model="default", system="Kısa yanıt ver.",
-                                 messages=[{"role": "user", "content": "Sadece 'tamam' yaz."}], max_tokens=20, effort=None))
-    assert res.text.strip()
+def test_live_memory_search_tool(live_report):
+    assert live_report["memory_search"]["status"] == "PASS", live_report["memory_search"]
+
+
+def test_live_task_create_tool(live_report):
+    assert live_report["task_create"]["status"] == "PASS", live_report["task_create"]

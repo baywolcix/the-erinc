@@ -14,6 +14,7 @@ from typing import Awaitable, Callable
 
 from . import approvals, memory, tasks
 from .db import Database, now_iso, log_activity
+from .redact import redact
 from .web import WebClient, WebError, wrap_untrusted
 
 MAX_OUTPUT_CHARS = 14_000
@@ -287,7 +288,7 @@ async def run_tool(ctx: ToolContext, name: str, raw_input: object, allowed: list
         out = out[:MAX_OUTPUT_CHARS] + "\n[…kısaltıldı]"
     with ctx.db.tx() as t:
         t.execute("INSERT INTO tool_calls(context,name,input,output,ok,llm_call_id,created_at) VALUES (?,?,?,?,?,?,?)",
-                  (ctx.context, name, json.dumps(raw_input, ensure_ascii=False, default=str)[:4000], out[:4000],
+                  (ctx.context, name, redact(json.dumps(raw_input, ensure_ascii=False, default=str)[:4000]), redact(out[:4000]),
                    1 if ok else 0, llm_call_id, now_iso()))
     summary = {"save_memory": "Hafızaya kaydetti", "create_task": "Görev oluşturdu", "update_task_status": "Görev durumunu değiştirdi",
                "update_memory": "Hafızayı düzeltti", "delete_memory": "Hafıza silme onayı istedi", "web_search": "Web'de aradı",
