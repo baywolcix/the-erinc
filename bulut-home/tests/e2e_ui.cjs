@@ -23,6 +23,7 @@ const assert = (c, m) => { if (!c) throw new Error("ASSERT: " + m); };
       await page.waitForSelector(".msg.assistant:not(.thinking)");
       const txt = await page.innerText(".msg.assistant");
       assert(txt.includes("Yan Daire") && !txt.includes("[["), txt);
+      assert(txt.includes("görev eklendi") && txt.includes("hafızaya kaydedildi"), "araç bilgisi: " + txt);
       if (SHOTS) await page.screenshot({ path: `${SHOTS}/${name}-chat.png` });
     }
     for (const view of ["tasks", "projects", "activity", "memory", "reports", "system", "approvals"]) {
@@ -37,7 +38,7 @@ const assert = (c, m) => { if (!c) throw new Error("ASSERT: " + m); };
       await page.waitForSelector("text=Kapak görseli tasarla");
       assert(await page.locator(".item", { hasText: "PROGRESS.md" }).count() === 1, "sohbetten görev");
       await page.click("a[data-view=memory]");
-      await page.waitForSelector("text=Yan Daire demo");
+      await page.waitForSelector("#memory-list >> text=Yan Daire demo");
       // proje silme → onay
       page.on("dialog", (d) => d.accept());
       await page.click("a[data-view=projects]");
@@ -46,6 +47,11 @@ const assert = (c, m) => { if (!c) throw new Error("ASSERT: " + m); };
       await page.waitForSelector("text=projesini sil");
       await page.click("#approval-list >> text=Reddet");
       await page.waitForSelector("#approval-list >> text=rejected");
+      // günlük brifing
+      await page.click("a[data-view=reports]");
+      await page.click("#brief-generate");
+      await page.waitForSelector("#brief-body >> text=Sabah brifingi");
+      assert((await page.innerText("#brief-meta")).includes("model özeti"), "brifing meta");
       // sohbet geçmişi kalıcı
       await page.click("a[data-view=chat]");
       await page.click("#conv-toggle");

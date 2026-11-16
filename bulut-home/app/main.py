@@ -12,7 +12,9 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import __version__, approvals, auth, chat, memory, sysinfo, tasks
+from . import __version__, approvals, auth, briefing, chat, memory, sysinfo, tasks
+from . import tools as _tools  # noqa: F401 — onay yürütücülerini kaydeder
+from .web import WebClient
 from .config import Settings, load_settings
 from .db import Database, log_activity, now_iso
 from .llm.pricing import PRICES_AS_OF
@@ -77,6 +79,7 @@ class State:
     router: LLMRouter
     worker: tasks.TaskWorker | None = None
     setup_token: str | None = None
+    web: WebClient | None = None
 
 
 def build_providers(s: Settings) -> dict:
@@ -111,12 +114,25 @@ async def _daily_backup_loop(st: State) -> None:
         await asyncio.sleep(3600)
 
 
-def create_app(settings: Settings | None = None, providers: dict | None = None, start_worker: bool | None = None) -> FastAPI:
+async def _brief_scheduler_loop(st: State) -> None:
+    while True:
+        try:
+            t = briefing.maybe_schedule(st.db, st.settings.brief_time, st.settings.timezone)
+            if t and not t.get("deduplicated"):
+                log_activity(st.db, "schedule", f"Günlük brifing görevi açıldı (#{t['id']})", ref=f"task:{t['id']}")
+        except Exception as e:  # noqa: BLE001
+            log_activity(st.db, "schedule_error", "Brifing zamanlayıcısı hatası", detail=str(e)[:500], level="error")
+        await asyncio.sleep(60)
+
+
+def create_app(settings: Settings | None = None, providers: dict | None = None, start_worker: bool | None = None,
+               web: WebClient | None = None) -> FastAPI:
     st = State()
     st.settings = settings or load_settings()
     st.db = Database(st.settings.db_path)
     st.db.init()
     st.router = LLMRouter(st.db, st.settings, providers if providers is not None else build_providers(st.settings))
+    st.web = web or WebClient(st.db, st.settings)
 
     if not auth.has_owner(st.db):
         tf = st.settings.data_dir / ".setup_token"
@@ -132,9 +148,10 @@ def create_app(settings: Settings | None = None, providers: dict | None = None, 
     async def lifespan(app: FastAPI):
         bg = []
         if run_worker:
-            st.worker = tasks.TaskWorker(st.db, st.router)
+            st.worker = tasks.TaskWorker(st.db, st.router, web=st.web)
             bg.append(asyncio.create_task(st.worker.run_forever()))
             bg.append(asyncio.create_task(_daily_backup_loop(st)))
+            bg.append(asyncio.create_task(_brief_scheduler_loop(st)))
         log_activity(st.db, "system", f"BULUT HOME {__version__} başlatıldı")
         yield
         if st.worker:
@@ -228,7 +245,7 @@ def create_app(settings: Settings | None = None, providers: dict | None = None, 
     @app.post("/api/chat")
     async def chat_send(body: ChatIn, user=Depends(current_user)):
         try:
-            return await chat.reply(st.db, st.router, body.conversation_id, body.message, body.tier)
+            return await chat.reply(st.db, st.router, body.conversation_id, body.message, body.tier, web=st.web)
         except KeyError as e:
             raise HTTPException(404, str(e))
         except ValueError as e:
@@ -438,6 +455,9 @@ def create_app(settings: Settings | None = None, providers: dict | None = None, 
                        "fallbacks": st.settings.model_fallbacks, "prices_as_of": PRICES_AS_OF},
             "providers": provs,
             "worker": {"enabled": st.worker is not None},
+            "web": {"search_backend": st.web.search_backend, "fetch": True,
+                    "searches_today": st.web.searches_today(), "daily_limit": st.settings.web_daily_limit},
+            "briefing": {"time": st.settings.brief_time or None, "timezone": st.settings.timezone},
             "tasks": tasks.counts(st.db),
             "pending_approvals": st.db.one("SELECT COUNT(*) AS n FROM approvals WHERE status='pending'")["n"],
             "devices": [{"name": "BULUT HOME (bu sunucu)", "status": "online"},
@@ -446,6 +466,28 @@ def create_app(settings: Settings | None = None, providers: dict | None = None, 
             "backups": sorted((p.name for p in (st.settings.data_dir / "backups").glob("bulut-*.db")), reverse=True)
                        if (st.settings.data_dir / "backups").exists() else [],
         }
+
+    # ---------------- brifing / web / araç kayıtları ----------------
+    @app.get("/api/briefings")
+    def briefing_list(limit: int = 14, user=Depends(current_user)):
+        return st.db.query("SELECT id, day, content, source, note, created_at FROM briefings ORDER BY day DESC LIMIT ?",
+                           (max(1, min(limit, 90)),))
+
+    @app.post("/api/briefings/generate")
+    async def briefing_generate(user=Depends(current_user)):
+        b = await briefing.generate(st.db, st.router, st.settings.timezone, st.settings.usd_try_rate)
+        return {k: b[k] for k in ("id", "day", "content", "source", "note", "created_at")}
+
+    @app.get("/api/web/sources")
+    def web_sources(limit: int = 100, user=Depends(current_user)):
+        return st.db.query("SELECT * FROM web_sources WHERE url IS NOT NULL ORDER BY id DESC LIMIT ?", (max(1, min(limit, 500)),))
+
+    @app.get("/api/tool-calls")
+    def tool_calls(context: str | None = None, limit: int = 100, user=Depends(current_user)):
+        limit = max(1, min(limit, 500))
+        if context:
+            return st.db.query("SELECT * FROM tool_calls WHERE context=? ORDER BY id DESC LIMIT ?", (context, limit))
+        return st.db.query("SELECT * FROM tool_calls ORDER BY id DESC LIMIT ?", (limit,))
 
     @app.post("/api/system/backup")
     async def backup_now(user=Depends(current_user)):

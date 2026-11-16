@@ -130,8 +130,14 @@ async function send() {
     const extras = [];
     if (r.memories_saved.length) extras.push(`🧠 ${r.memories_saved.length} bilgi hafızaya`);
     if (r.tasks_created.length) extras.push(`✓ ${r.tasks_created.length} görev eklendi`);
+    const TOOL_TR = { search_memory: "hafıza arandı", save_memory: "hafızaya kaydedildi", update_memory: "hafıza düzeltildi",
+      delete_memory: "silme onayı istendi", list_tasks: "görevlere bakıldı", get_task: "görev okundu", create_task: "görev eklendi",
+      update_task_status: "görev güncellendi", list_projects: "projelere bakıldı", daily_summary: "günlük özet okundu",
+      web_search: "web'de arandı", web_fetch: "sayfa okundu" };
+    const used = [...new Set((r.tool_events || []).map((e) => (TOOL_TR[e.name] || e.name) + (e.ok ? "" : " (hata)")))];
+    if (used.length) extras.push("🔧 " + used.join(", "));
     addMsg("assistant", r.assistant_message.content,
-      [r.assistant_message.model, `${r.usage.input_tokens}+${r.usage.output_tokens} token`, ...extras].join(" · "));
+      [r.assistant_message.model, `${r.usage.input_tokens}+${r.usage.output_tokens} token` + (r.usage.model_calls > 1 ? ` · ${r.usage.model_calls} adım` : ""), ...extras].join(" · "));
     speak(r.assistant_message.content);
     refreshBadges();
   } catch (e) {
@@ -176,7 +182,7 @@ async function loadProjectsCache() { projectsCache = await api("/api/projects");
 loaders.tasks = async () => {
   const [data] = await Promise.all([api("/api/tasks" + (taskFilter ? "?status=" + taskFilter : "")), loadProjectsCache()]);
   const kindSel = $("#task-kind");
-  if (!kindSel.options.length) Object.entries(data.kinds).forEach(([k, v]) => kindSel.append(el("option", { value: k, title: v }, { manual: "Elle", llm: "BULUT yapsın", plan: "Hedefi planla" }[k] || k)));
+  if (!kindSel.options.length) Object.entries(data.kinds).filter(([k]) => k !== "brief").forEach(([k, v]) => kindSel.append(el("option", { value: k, title: v }, { manual: "Elle", llm: "BULUT yapsın", plan: "Hedefi planla" }[k] || k)));
   const ps = $("#task-project"); ps.replaceChildren(el("option", { value: "" }, "Proje yok"), ...projectsCache.map((p) => el("option", { value: p.id }, p.name)));
   const tabs = $("#task-tabs"); tabs.replaceChildren();
   [["", "Tümü"], ["running", "Aktif"], ["pending", "Bekleyen"], ["waiting_approval", "Onay"], ["done", "Tamamlanan"], ["failed", "Başarısız"]].forEach(([s, label]) => {
@@ -302,8 +308,26 @@ function barChart(container, days, series) {
     return col;
   }));
 }
+function renderBrief(b) {
+  $("#brief-body").textContent = b ? b.content : "Henüz brifing yok. 'Şimdi oluştur' ile hazırlayabilirsin.";
+  $("#brief-body").classList.toggle("muted", !b);
+  $("#brief-meta").textContent = b ? `${b.day} · ${b.source === "llm" ? "model özeti" : "veri özeti (model kullanılmadı)"} · ${fmtTime(b.created_at)}` + (b.note ? " · " + b.note : "") : "";
+}
+$("#brief-generate").addEventListener("click", async (e) => {
+  e.target.disabled = true;
+  try { renderBrief(await api("/api/briefings/generate", { method: "POST" })); toast("Brifing hazır"); }
+  catch (err) { toast(err.message, true); } finally { e.target.disabled = false; }
+});
+$("#brief-speak").addEventListener("click", () => {
+  const t = $("#brief-body").textContent;
+  if (!window.speechSynthesis) { toast("Tarayıcı sesli okumayı desteklemiyor", true); return; }
+  speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(t.slice(0, 3000)); u.lang = "tr-TR";
+  const v = speechSynthesis.getVoices().find((x) => x.lang && x.lang.startsWith("tr")); if (v) u.voice = v;
+  speechSynthesis.speak(u);
+});
 loaders.reports = async () => {
-  const [r, s] = await Promise.all([api("/api/reports/daily?days=14"), api("/api/system")]);
+  const [r, s, briefs] = await Promise.all([api("/api/reports/daily?days=14"), api("/api/system"), api("/api/briefings?limit=1")]);
+  renderBrief(briefs[0]);
   const days = lastDays(14), rate = r.usd_try_rate;
   const costMap = Object.fromEntries(r.cost_by_day.map((x) => [x.day, rate ? x.usd * rate : x.usd]));
   barChart($("#cost-chart"), days, [{ map: costMap, label: (v) => v.toFixed(2) }]);
@@ -351,6 +375,8 @@ loaders.system = async () => {
       el("dt", {}, "Yedek zincir"), el("dd", {}, s.models.fallbacks.join(", ") || "—"),
       el("dt", {}, "Sağlayıcılar"), el("dd", {}, s.providers.map((p) => `${p.name}: ${p.configured ? "✓" : "anahtar yok"}`).join(" · ")),
       el("dt", {}, "Görev işçisi"), el("dd", {}, s.worker.enabled ? "çalışıyor" : "kapalı"),
+      el("dt", {}, "Web araması"), el("dd", {}, s.web.search_backend ? `${s.web.search_backend} · bugün ${s.web.searches_today}/${s.web.daily_limit}` : "yapılandırılmamış (sayfa okuma açık)"),
+      el("dt", {}, "Günlük brifing"), el("dd", {}, s.briefing.time ? `${s.briefing.time} (${s.briefing.timezone})` : "kapalı"),
       el("dt", {}, "Cihazlar"), el("dd", {}, s.devices.map((d) => `${d.name}: ${d.status}`).join(" · ")),
       el("dt", {}, "Yedekler"), el("dd", {}, s.backups.slice(0, 3).join(", ") || "henüz yok")));
 };

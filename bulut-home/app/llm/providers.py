@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -23,6 +24,13 @@ class LLMResult:
     cache_write_tokens: int = 0
     stop_reason: str | None = None
     extra: dict = field(default_factory=dict)
+    # Anthropic biçiminde içerik blokları (text / tool_use / thinking ...). Araç döngüsünde
+    # asistan mesajı olarak AYNEN geri gönderilir (düşünme blokları değiştirilmemeli).
+    content: list[dict] = field(default_factory=list)
+
+    @property
+    def tool_uses(self) -> list[dict]:
+        return [b for b in self.content if b.get("type") == "tool_use"]
 
 
 class ProviderError(Exception):
@@ -37,7 +45,7 @@ class Provider(Protocol):
     def available(self) -> bool: ...
     def price(self, model: str) -> Price | None: ...
     async def complete(self, *, model: str, system: str, messages: list[dict],
-                       max_tokens: int, effort: str | None) -> LLMResult: ...
+                       max_tokens: int, effort: str | None, tools: list[dict] | None = None) -> LLMResult: ...
 
 
 # Sunucu tarafı reddetme yedeği: model güvenlik sınıflandırıcısı yüzünden reddederse aynı istek
@@ -70,7 +78,7 @@ class AnthropicProvider:
             self._client = anthropic.AsyncAnthropic(api_key=self._api_key, max_retries=1, timeout=120.0, **kw)
         return self._client
 
-    async def complete(self, *, model, system, messages, max_tokens, effort) -> LLMResult:
+    async def complete(self, *, model, system, messages, max_tokens, effort, tools=None) -> LLMResult:
         import anthropic
 
         client = self._get_client()
@@ -83,6 +91,8 @@ class AnthropicProvider:
         )
         if effort:
             kwargs["output_config"] = {"effort": effort}
+        if tools:
+            kwargs["tools"] = tools
         try:
             if model in REFUSAL_FALLBACK:
                 resp = await client.beta.messages.create(
@@ -123,6 +133,7 @@ class AnthropicProvider:
             cache_write_tokens=getattr(u, "cache_creation_input_tokens", 0) or 0,
             stop_reason=resp.stop_reason,
             extra={"iterations": iterations} if iterations else {},
+            content=[b.model_dump(mode="json", exclude_none=True) for b in resp.content],
         )
 
 
@@ -146,15 +157,18 @@ class OpenAICompatProvider:
     def price(self, model: str) -> Price | None:
         return self._price
 
-    async def complete(self, *, model, system, messages, max_tokens, effort) -> LLMResult:
+    async def complete(self, *, model, system, messages, max_tokens, effort, tools=None) -> LLMResult:
         import httpx2
 
         model = self.resolve_model(model)
         body = {
             "model": model,
             "max_tokens": max_tokens,
-            "messages": [{"role": "system", "content": system}] + messages,
+            "messages": [{"role": "system", "content": system}] + to_openai_messages(messages),
         }
+        if tools:
+            body["tools"] = [{"type": "function", "function": {
+                "name": t["name"], "description": t.get("description", ""), "parameters": t["input_schema"]}} for t in tools]
         try:
             async with httpx2.AsyncClient(timeout=120.0, transport=self._transport) as client:
                 r = await client.post(
@@ -169,12 +183,56 @@ class OpenAICompatProvider:
             raise ProviderError(f"OpenAI uyumlu API hatası {r.status_code}: {r.text[:300]}", retryable=retryable)
         data = r.json()
         choice = (data.get("choices") or [{}])[0]
+        msg = choice.get("message") or {}
         usage = data.get("usage") or {}
+        text = msg.get("content") or ""
+        content: list[dict] = [{"type": "text", "text": text}] if text else []
+        for tc in msg.get("tool_calls") or []:
+            fn = tc.get("function") or {}
+            try:
+                args = json.loads(fn.get("arguments") or "{}")
+            except json.JSONDecodeError:
+                args = {"_invalid_json": fn.get("arguments")}
+            content.append({"type": "tool_use", "id": tc.get("id") or f"call_{len(content)}", "name": fn.get("name"), "input": args})
+        finish = choice.get("finish_reason")
         return LLMResult(
-            text=(choice.get("message") or {}).get("content") or "",
+            text=text,
             provider=self.name,
             model=data.get("model") or model,
             input_tokens=int(usage.get("prompt_tokens") or 0),
             output_tokens=int(usage.get("completion_tokens") or 0),
-            stop_reason=choice.get("finish_reason"),
+            stop_reason="tool_use" if finish == "tool_calls" or any(b["type"] == "tool_use" for b in content) else finish,
+            content=content,
         )
+
+
+def to_openai_messages(messages: list[dict]) -> list[dict]:
+    """Anthropic biçimli mesajları (tool_use / tool_result blokları dahil) OpenAI biçimine çevirir."""
+    out: list[dict] = []
+    for m in messages:
+        c = m.get("content")
+        if isinstance(c, str):
+            out.append({"role": m["role"], "content": c})
+            continue
+        if m["role"] == "assistant":
+            text = "".join(b.get("text", "") for b in c if b.get("type") == "text")
+            calls = [{"id": b["id"], "type": "function",
+                      "function": {"name": b["name"], "arguments": json.dumps(b.get("input") or {}, ensure_ascii=False)}}
+                     for b in c if b.get("type") == "tool_use"]
+            msg: dict = {"role": "assistant", "content": text or None}
+            if calls:
+                msg["tool_calls"] = calls
+            out.append(msg)
+        else:
+            texts = []
+            for b in c:
+                if b.get("type") == "tool_result":
+                    rc = b.get("content")
+                    if isinstance(rc, list):
+                        rc = "".join(x.get("text", "") for x in rc)
+                    out.append({"role": "tool", "tool_call_id": b["tool_use_id"], "content": str(rc)})
+                elif b.get("type") == "text":
+                    texts.append(b["text"])
+            if texts:
+                out.append({"role": "user", "content": "\n".join(texts)})
+    return out

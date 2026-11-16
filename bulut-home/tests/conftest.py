@@ -31,13 +31,23 @@ class FakeProvider:
     def price(self, model):
         return self._price
 
-    async def complete(self, *, model, system, messages, max_tokens, effort):
-        self.calls.append({"model": model, "system": system, "messages": messages, "effort": effort})
+    async def complete(self, *, model, system, messages, max_tokens, effort, tools=None):
+        """Yanıt str ise düz metin; dict ise {"tools": [(ad, girdi), ...], "text": "..."} araç çağrısı simüle eder."""
+        import copy
+        self.calls.append({"model": model, "system": system, "messages": copy.deepcopy(messages), "effort": effort,
+                           "tools": [t["name"] for t in tools] if tools else []})
         if self.fail_times > 0:
             self.fail_times -= 1
             raise ProviderError("simüle edilmiş hata", retryable=not self.fatal)
-        text = self.replies.pop(0) if self.replies else "Tamam."
-        return LLMResult(text=text, provider=self.name, model=model, input_tokens=1000, output_tokens=200)
+        r = self.replies.pop(0) if self.replies else "Tamam."
+        if isinstance(r, dict):
+            content = ([{"type": "text", "text": r["text"]}] if r.get("text") else [])
+            for i, (name, inp) in enumerate(r.get("tools", [])):
+                content.append({"type": "tool_use", "id": f"toolu_{len(self.calls)}_{i}", "name": name, "input": inp})
+            return LLMResult(text=r.get("text", ""), provider=self.name, model=model, input_tokens=1000, output_tokens=200,
+                             stop_reason="tool_use" if r.get("tools") else "end_turn", content=content)
+        return LLMResult(text=r, provider=self.name, model=model, input_tokens=1000, output_tokens=200,
+                         stop_reason="end_turn", content=[{"type": "text", "text": r}])
 
 
 def make_settings(tmp_path, **over):

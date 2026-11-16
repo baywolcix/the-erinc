@@ -35,3 +35,21 @@ Faz 1 tamamlandı, Faz 2'nin çoğu yapıldı.
 - [x] Onaylar: yürütücü hatası kaydı
 - [x] Docker imajı gerçekten derlendi ve çalıştırıldı (kalıcılık, healthcheck, uid 1000, 512 MB sınırı doğrulandı)
 - [x] Opt-in canlı API testleri (`tests/live/`, varsayılan atlanır)
+
+### Faz 2 — tamamlananlar (oturum 2)
+- [x] **Gerçek araç kullanımı (tool use):** `app/tools.py` + `app/agent.py`. Model 12 araç kullanabiliyor: search_memory, save_memory, update_memory, delete_memory (yalnızca onay ister), list_tasks, get_task, create_task, update_task_status, list_projects, daily_summary, web_search, web_fetch
+  - Girdiler kodda doğrulanır; araç hatası modele `is_error` ile döner, sohbet çökmez
+  - Her çağrı `tool_calls` tablosuna + aktiviteye yazılır; `/api/tool-calls`
+  - Döngü sınırları: yanıt başına 6 model adımı, 12 araç çağrısı; döngü boyunca aynı model (thinking blokları modele bağlı)
+  - Arka plan `llm` görevleri daraltılmış araç seti kullanır (görev oluşturamaz/kapatamaz/silme isteyemez)
+  - OpenAI uyumlu sağlayıcı için tool_calls dönüşümü
+  - Eski `[[HATIRLA]]/[[GOREV]]` işaretleri geri uyumluluk için hâlâ ayrıştırılıyor
+- [x] **Web araştırması:** `app/web.py` — Brave Search API veya SearXNG ile arama; sayfa okuma (SSRF koruması, yönlendirme denetimi, 2 MB / 15 sn sınırı, yalnızca metin); sonuçlar "güvenilmeyen veri" etiketli; kaynaklar `web_sources` tablosunda (adres, başlık, tarih, bağlam); günlük arama sınırı
+- [x] **Günlük brifing:** `app/briefing.py` — gerçek kayıtlardan veri; model varsa kısa metin, yoksa deterministik rapor; her gün `BULUT_BRIEF_TIME`'da (varsayılan 08:30 İstanbul) zamanlayıcı görevi; Raporlar'da kart + "Şimdi oluştur" + "Sesli dinle"
+- [x] Şema v2 göçü (mevcut veritabanında test edildi)
+
+### Doğrulanmamış / yarım (oturum 2 sonu)
+- [ ] Gerçek model API'si ile araç kullanımı (anahtar yok; istek biçimi SDK + sahte HTTP ile doğrulandı). İlk canlı deneme: `BULUT_LIVE_TESTS=1 python -m pytest -m live tests/live`
+- [ ] Gerçek web erişimi (geliştirme ortamı ağı genel siteleri engelliyor)
+- [ ] Üretim Dockerfile'ı ile yeni kodun temiz derlemesi (Docker Hub 429); doğrulama imajıyla çalıştırıldı
+- [ ] Bildirimler (anlık) — sıradaki

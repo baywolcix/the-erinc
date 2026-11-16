@@ -5,7 +5,8 @@ import re
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from . import memory, tasks
+from . import agent, memory, tasks
+from .tools import CHAT_TOOLS, ToolContext
 from .db import Database, now_iso, log_activity
 from .llm.router import LLMRouter, choose_tier
 from .persona import build_system
@@ -43,7 +44,8 @@ def extract_markers(text: str) -> tuple[str, list[tuple[str, str]], list[tuple[i
     return clean, mems, tsk
 
 
-async def reply(db: Database, router: LLMRouter, conv_id: int | None, text: str, tier: str | None = None) -> dict:
+async def reply(db: Database, router: LLMRouter, conv_id: int | None, text: str, tier: str | None = None,
+                web=None) -> dict:
     text = text.strip()
     if not text:
         raise ValueError("Boş mesaj")
@@ -64,8 +66,12 @@ async def reply(db: Database, router: LLMRouter, conv_id: int | None, text: str,
                           datetime.now(TZ).strftime("%Y-%m-%d (%A)"))
     tier = tier if tier in ("fast", "smart") else choose_tier(text)
 
-    res, call_id = await router.complete(system=system, messages=history, tier=tier, purpose=f"chat:{conv_id}")
-    clean, new_mems, new_tasks = extract_markers(res.text)
+    ctx = ToolContext(db, f"chat:{conv_id}", web=web)
+    ar = await agent.run(router, ctx, system=system, messages=history, tier=tier, purpose=f"chat:{conv_id}",
+                         allowed_tools=CHAT_TOOLS)
+    res, call_id = ar.last, ar.llm_call_ids[-1]
+    # Eski işaret biçimi hâlâ ayrıştırılır (araç desteklemeyen sağlayıcılar için geri uyumluluk)
+    clean, new_mems, new_tasks = extract_markers(ar.text)
     if not clean:
         clean = "(Boş yanıt döndü.)"
     asst = add_message(db, conv_id, "assistant", clean, model=f"{res.provider}:{res.model}", llm_call_id=call_id)
@@ -90,5 +96,6 @@ async def reply(db: Database, router: LLMRouter, conv_id: int | None, text: str,
         "tier": tier,
         "memories_saved": saved_mems,
         "tasks_created": created_tasks,
-        "usage": {"input_tokens": res.input_tokens, "output_tokens": res.output_tokens},
+        "tool_events": [{"name": e["name"], "ok": e["ok"]} for e in ar.tool_events],
+        "usage": {"input_tokens": ar.input_tokens, "output_tokens": ar.output_tokens, "model_calls": len(ar.llm_call_ids)},
     }

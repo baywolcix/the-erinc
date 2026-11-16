@@ -20,7 +20,12 @@ from app.main import create_app  # noqa: E402
 def main(shots: Path | None):
     tmp = Path(tempfile.mkdtemp())
     fake = FakeProvider(replies=[
-        "Bugün henüz kayıtlı bir iş yok. İstersen Yan Daire için ilk görevi ekleyeyim.\n[[GOREV:2|yan-daire|PROGRESS.md dosyasını BULUT'a bağla]]\n[[HATIRLA:goal|Yan Daire demo sürümünü yıl sonuna yetiştirmek]]",
+        {"text": "Kayıtlara bakıyorum.", "tools": [
+            ("daily_summary", {}),
+            ("create_task", {"title": "PROGRESS.md dosyasını BULUT'a bağla", "kind": "manual", "priority": 2, "project_slug": "yan-daire"}),
+            ("save_memory", {"content": "Yan Daire demo sürümünü yıl sonuna yetiştirmek", "kind": "goal", "project_slug": "yan-daire"})]},
+        "Bugün kayıtlı tamamlanmış iş yok. Yan Daire için ilk görevi ekledim ve hedefi not ettim.",
+        "Sabah brifingi: dün tamamlanan iş yok; bugün öncelik Yan Daire PROGRESS.md bağlantısı.",
     ] + ["Tamam."] * 20)
     app = create_app(make_settings(tmp), providers={"anthropic": fake}, start_worker=False)
     token = (tmp / ".setup_token").read_text().strip()

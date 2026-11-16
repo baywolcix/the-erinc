@@ -117,6 +117,13 @@
     <!-- RAPORLAR -->
     <section class="view" id="view-reports">
       <header class="view-head"><h2>Raporlar</h2></header>
+      <div class="card brief" id="brief-card">
+        <div class="item-head"><h3 class="title">Günlük brifing</h3>
+          <button class="btn small ghost" id="brief-speak">Sesli dinle</button>
+          <button class="btn small" id="brief-generate">Şimdi oluştur</button></div>
+        <div id="brief-body" class="brief-body muted">Henüz brifing yok.</div>
+        <p class="muted small" id="brief-meta"></p>
+      </div>
       <div class="grid stats" id="report-stats"></div>
       <div class="card"><h3>Günlük AI maliyeti (son 14 gün)</h3><div class="bars" id="cost-chart"></div><p class="muted small" id="cost-note"></p></div>
       <div class="card"><h3>Görevler (son 14 gün)</h3><div class="bars" id="task-chart"></div></div>

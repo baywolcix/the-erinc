@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -160,6 +160,43 @@ CREATE TABLE IF NOT EXISTS activity (
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_activity_created ON activity(created_at);
+
+-- v2: araç çağrıları (işlem kaydı), web kaynakları, günlük brifingler
+CREATE TABLE IF NOT EXISTS tool_calls (
+    id INTEGER PRIMARY KEY,
+    context TEXT NOT NULL,            -- 'chat:<conv_id>' | 'task:<id>'
+    name TEXT NOT NULL,
+    input TEXT NOT NULL,
+    output TEXT,
+    ok INTEGER NOT NULL,
+    llm_call_id INTEGER REFERENCES llm_calls(id),
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_tool_calls_ctx ON tool_calls(context, id);
+
+CREATE TABLE IF NOT EXISTS web_sources (
+    id INTEGER PRIMARY KEY,
+    kind TEXT NOT NULL,               -- 'search' | 'fetch'
+    query TEXT,
+    url TEXT,
+    title TEXT,
+    snippet TEXT,
+    published TEXT,
+    context TEXT,
+    fetched_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_web_sources_time ON web_sources(fetched_at);
+
+CREATE TABLE IF NOT EXISTS briefings (
+    id INTEGER PRIMARY KEY,
+    day TEXT UNIQUE NOT NULL,         -- yerel tarih YYYY-MM-DD
+    content TEXT NOT NULL,
+    data TEXT NOT NULL,
+    source TEXT NOT NULL,             -- 'llm' | 'deterministic'
+    note TEXT,
+    llm_call_id INTEGER REFERENCES llm_calls(id),
+    created_at TEXT NOT NULL
+);
 """
 
 DEFAULT_PROJECTS = [
@@ -226,7 +263,8 @@ class Database:
         c = self.conn()
         c.executescript(SCHEMA)
         with self.tx() as t:
-            t.execute("INSERT OR IGNORE INTO meta(key,value) VALUES('schema_version', ?)", (str(SCHEMA_VERSION),))
+            t.execute("INSERT INTO meta(key,value) VALUES('schema_version', ?) "
+                      "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (str(SCHEMA_VERSION),))
             ts = now_iso()
             for slug, name, desc in DEFAULT_PROJECTS:
                 t.execute(

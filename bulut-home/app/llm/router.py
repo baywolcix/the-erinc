@@ -1,13 +1,14 @@
 """Model yönlendirici: katman seçimi, bütçe koruması, yedek zinciri, maliyet kaydı, döngü sınırı."""
 from __future__ import annotations
 
+import json
+import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from ..config import Settings
 from ..db import Database, now_iso, log_activity
-import threading
 
 from .pricing import cost_usd, worst_case_usd
 from .providers import REFUSAL_FALLBACK, LLMResult, Provider, ProviderError
@@ -187,14 +188,17 @@ class LLMRouter:
         return out
 
     async def complete(self, *, system: str, messages: list[dict], tier: str = "fast",
-                       purpose: str = "chat", max_tokens: int | None = None) -> tuple[LLMResult, int]:
+                       purpose: str = "chat", max_tokens: int | None = None, tools: list[dict] | None = None,
+                       route: Route | None = None) -> tuple[LLMResult, int]:
+        """`route` verilirse yalnızca o sağlayıcı/model denenir (araç döngüsünde model değişmesin diye)."""
         self._check_rate()
         max_tokens = max_tokens or (4096 if tier == "fast" else 8192)
-        est_in = (len(system) + sum(len(str(m.get("content", ""))) for m in messages)) // 3 + 50
+        est_in = (len(system) + len(json.dumps(messages, ensure_ascii=False))
+                  + (len(json.dumps(tools, ensure_ascii=False)) if tools else 0)) // 3 + 50
         errors: list[str] = []
         any_retryable = False
         budget_errors: list[str] = []
-        for route in self.chain(tier):
+        for route in ([route] if route else self.chain(tier)):
             provider = self.providers.get(route.provider)
             if provider is None or not provider.available():
                 continue
@@ -210,8 +214,9 @@ class LLMRouter:
             effort = ("low" if tier == "fast" else "medium") if route.provider == "anthropic" else None
             t0 = time.monotonic()
             try:
+                kw = {"tools": tools} if tools else {}
                 res = await provider.complete(model=model, system=system, messages=messages,
-                                              max_tokens=max_tokens, effort=effort)
+                                              max_tokens=max_tokens, effort=effort, **kw)
             except ProviderError as e:
                 self._release(reserved)
                 self._record(route, purpose, None, str(e)[:500], int((time.monotonic() - t0) * 1000))
@@ -226,6 +231,7 @@ class LLMRouter:
                 call_id = self._record(route, purpose, res, None, int((time.monotonic() - t0) * 1000))
             finally:
                 self._release(reserved)
+            res.extra["route"] = str(route)
             return res, call_id
         if errors:
             raise ProvidersFailed("Tüm sağlayıcılar başarısız: " + " | ".join(errors), any_retryable)

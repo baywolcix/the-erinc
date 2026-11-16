@@ -108,3 +108,29 @@ def test_openai_compat_provider_parses_response():
     with pytest.raises(ProviderError) as e:
         run(p2.complete(model="m", system="s", messages=[], max_tokens=10, effort=None))
     assert e.value.retryable is False
+
+
+@pytest.mark.sdk_http
+def test_openai_compat_tool_calls_roundtrip():
+    import json as _j
+    import httpx2
+    from app.llm.providers import OpenAICompatProvider, to_openai_messages
+    seen = {}
+
+    def handler(request):
+        seen["body"] = _j.loads(request.content)
+        return httpx2.Response(200, json={"model": "m", "choices": [{"finish_reason": "tool_calls", "message": {
+            "content": None, "tool_calls": [{"id": "c1", "type": "function",
+                                             "function": {"name": "list_tasks", "arguments": "{\"status\": \"pending\"}"}}]}}],
+            "usage": {"prompt_tokens": 5, "completion_tokens": 2}})
+    p = OpenAICompatProvider("k", "https://x.invalid/v1", "m", 0.1, 0.2, transport=httpx2.MockTransport(handler))
+    tools = [{"name": "list_tasks", "description": "d", "input_schema": {"type": "object", "properties": {}}}]
+    res = run(p.complete(model="m", system="s", messages=[{"role": "user", "content": "x"}], max_tokens=10, effort=None, tools=tools))
+    assert seen["body"]["tools"][0]["function"]["name"] == "list_tasks"
+    assert res.stop_reason == "tool_use" and res.tool_uses[0]["input"] == {"status": "pending"}
+    conv = to_openai_messages([
+        {"role": "user", "content": "x"},
+        {"role": "assistant", "content": res.content},
+        {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "c1", "content": "[]"}]},
+    ])
+    assert conv[1]["tool_calls"][0]["id"] == "c1" and conv[2] == {"role": "tool", "tool_call_id": "c1", "content": "[]"}

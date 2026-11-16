@@ -77,3 +77,42 @@ def test_fallback_iterations_are_parsed():
                                                   messages=[{"role": "user", "content": "x"}], max_tokens=100, effort=None))
     its = res.extra["iterations"]
     assert [i["model"] for i in its] == ["claude-sonnet-5-5", "claude-sonnet-5"]
+
+
+def test_tool_use_roundtrip_preserves_thinking_blocks():
+    """Araç döngüsü: ilk yanıttaki thinking + tool_use blokları ikinci istekte AYNEN geri gönderilmeli."""
+    from app import agent, tools as T
+    from app.db import Database
+    from app.llm.router import LLMRouter
+    import tempfile
+    from pathlib import Path
+    from conftest import make_settings
+
+    bodies = []
+
+    def handler(req):
+        bodies.append(json.loads(req.content))
+        if len(bodies) == 1:
+            return httpx2.Response(200, json={
+                "id": "msg_1", "type": "message", "role": "assistant", "model": "claude-haiku-5-5",
+                "content": [{"type": "thinking", "thinking": "", "signature": "SIG123"},
+                            {"type": "tool_use", "id": "toolu_A", "name": "list_projects", "input": {}}],
+                "stop_reason": "tool_use", "stop_sequence": None,
+                "usage": {"input_tokens": 50, "output_tokens": 20}})
+        return httpx2.Response(200, json=_ok_body("claude-haiku-5-5"))
+
+    tmp = Path(tempfile.mkdtemp())
+    s = make_settings(tmp)
+    db = Database(s.db_path); db.init()
+    router = LLMRouter(db, s, {"anthropic": _provider(handler)})
+    res = asyncio.run(agent.run(router, T.ToolContext(db, "chat:1"), system="s", messages=[{"role": "user", "content": "projeler?"}],
+                                tier="fast", purpose="t", allowed_tools=T.CHAT_TOOLS))
+    assert res.text == "Merhaba"
+    assert any(t["name"] == "list_projects" for t in bodies[0]["tools"])
+    assert "tool_choice" not in bodies[0]  # 5.5 modellerinde zorlanmış araç seçimi 400 verir
+    sent = bodies[1]["messages"]
+    assert sent[1]["role"] == "assistant"
+    assert sent[1]["content"][0] == {"type": "thinking", "thinking": "", "signature": "SIG123"}
+    assert sent[1]["content"][1]["type"] == "tool_use" and sent[1]["content"][1]["id"] == "toolu_A"
+    assert sent[2]["content"][0]["type"] == "tool_result" and sent[2]["content"][0]["tool_use_id"] == "toolu_A"
+    assert "Yan Daire" in sent[2]["content"][0]["content"]

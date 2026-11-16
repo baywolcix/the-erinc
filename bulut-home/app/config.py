@@ -42,6 +42,12 @@ class Settings:
     monthly_budget_try: float = 400.0
     usd_try_rate: float | None = None
     worker_enabled: bool = True
+    brave_api_key: str = ""
+    searxng_url: str = ""
+    web_daily_limit: int = 40
+    web_trust_proxy_dns: bool = False
+    brief_time: str = "08:30"           # yerel saat, boş = kapalı
+    timezone: str = "Europe/Istanbul"
 
     @property
     def db_path(self) -> Path:
@@ -79,4 +85,10 @@ def load_settings() -> Settings:
         monthly_budget_try=_float_or_none(os.environ.get("BULUT_MONTHLY_BUDGET_TRY")) or 400.0,
         usd_try_rate=_float_or_none(os.environ.get("BULUT_USD_TRY_RATE")),
         worker_enabled=os.environ.get("BULUT_WORKER", "1") == "1",
+        brave_api_key=os.environ.get("BRAVE_API_KEY", ""),
+        searxng_url=os.environ.get("SEARXNG_URL", "").rstrip("/"),
+        web_daily_limit=int(_float_or_none(os.environ.get("BULUT_WEB_DAILY_LIMIT")) or 40),
+        web_trust_proxy_dns=os.environ.get("BULUT_WEB_TRUST_PROXY_DNS", "0") == "1",
+        brief_time=os.environ.get("BULUT_BRIEF_TIME", "08:30").strip(),
+        timezone=os.environ.get("BULUT_TIMEZONE", "Europe/Istanbul"),
     )

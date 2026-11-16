@@ -18,3 +18,12 @@
 | 2026-11-16 | Otomatik yedek döndürme (son 7) onaysız | BULUT'un kendi ürettiği yedek dosyaları; kullanıcı verisi değil. |
 | 2026-11-16 | Ses: tarayıcının Web Speech API'si (bas-konuş + sesli okuma) | Ücretsiz, sunucuda kaynak harcamaz. Not: Chrome konuşma tanımada sesi Google sunucularına gönderir. Whisper'lı yerel/ana PC çözümü Faz 4. |
 | 2026-11-16 | Sohbetten hafıza/görev üretimi model çıktısındaki `[[HATIRLA]]`/`[[GOREV]]` işaretleriyle | Ek çağrı yok. Model yalnızca güvenli işlemleri (hafıza notu, elle görev) önerebilir; kritik işlem tetikleyemez. |
+| 2026-11-16 | Reddetme yedeği `"default"` yerine sabit model (`sonnet-5-5→sonnet-5`, `opus-5-5→opus-4-8`) | Bütçe ön kontrolü yedek modelin fiyatını bilmeli; maliyet `usage.iterations` ile adım adım hesaplanıyor. |
+| 2026-11-16 | Eşzamanlı çağrılar için bellek içi bütçe rezervasyonu | Tek süreç olduğu için yeterli; çok süreçli yapıya geçilirse DB tabanlı rezervasyon gerekir. |
+| 2026-11-16 | Araç kullanımı manuel döngüyle (SDK tool runner değil) | Onay kapısı, girdi doğrulama, kayıt ve OpenAI uyumlu sağlayıcı desteği bizim kodumuzda kalsın. |
+| 2026-11-16 | `tool_choice` gönderilmiyor (otomatik), `strict` kullanılmıyor | 5.5 modellerinde zorlanmış araç seçimi 400 veriyor; girdiler zaten kodda doğrulanıyor. |
+| 2026-11-16 | Araç döngüsünde rota sabit | Thinking blokları modele bağlı; döngü ortasında başka sağlayıcıya atlamak biçim/doğrulama hatası doğurur. Hata olursa yanıt başarısız sayılır. |
+| 2026-11-16 | Arka plan görevlerinin araç seti daraltıldı | Görevlerin kendiliğinden görev üretip çoğalmasını (agent döngüsü) engellemek. |
+| 2026-11-16 | Web araması: Brave API veya kendi SearXNG; Anthropic sunucu tarafı web_search şimdilik kullanılmadı | Sağlayıcıdan bağımsız kalmak ve maliyeti ayrı izlemek. Anthropic aracı ücretli ve yalnızca Claude ile çalışır; sonra seçenek olarak eklenebilir. |
+| 2026-11-16 | Web isteklerinde SSRF koruması: yalnızca küresel IP'ler, yerel ağ adları engelli, her yönlendirme yeniden denetlenir | BULUT ev ağında ve tailnet'te çalışıyor; model/web içeriği iç servislere istek attıramamalı. Bilinen sınır: DNS rebinding penceresi. |
+| 2026-11-16 | Brifing verisi deterministik, model yalnızca metne çeviriyor | Uydurma iş/sayı olmasın; model yoksa da brifing üretilsin. Günde bir deneme (başarısız olsa bile tekrar açılmaz). |

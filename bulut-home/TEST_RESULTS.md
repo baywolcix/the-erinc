@@ -1,5 +1,34 @@
 # Test Sonuçları
 
+## 2026-11-16 — Oturum 2 (devam): araç kullanımı, web araştırması, günlük brifing
+
+| Komut | Sonuç |
+|---|---|
+| `python -m pytest -q` | **93 geçti, 3 atlandı** (atlananlar: `live` — gerçek ücretli API, anahtar yok) |
+| `-m fake_llm` | 36 geçti — model yanıtları/araç çağrıları senaryolu; araçların kendisi (DB, onay, görev, brifing) gerçek kod |
+| `-m sdk_http` | 7 geçti — gerçek `anthropic` SDK / httpx2, sahte HTTP: tool_use ↔ tool_result gidiş-dönüşü, **thinking bloklarının aynen geri gönderilmesi**, `tool_choice` gönderilmemesi, yedek model iterasyonları, OpenAI uyumlu tool_calls dönüşümü |
+| `-m no_llm` | 51 geçti — web (SSRF, yönlendirme, boyut, arama ayrıştırma, günlük sınır), brifing veri toplama/zamanlayıcı, auth, DB, onaylar |
+| `-m live` | 3 atlandı |
+| `python tests/e2e_ui.py` (Chromium, telefon + masaüstü) | **E2E OK** — sohbette araç zinciri (daily_summary → create_task → save_memory) ve araç bilgisi, brifing kartı "Şimdi oluştur", 8 bölüm, konsol hatası yok |
+
+(Bir test hem `no_llm` modülünde hem `fake_llm` işaretli olduğu için kategori toplamı 94.)
+
+### Docker (yeni kodla)
+- Üretim Dockerfile'ı ile yeniden derleme **Docker Hub 429 (hız sınırı)** nedeniyle bu oturumda tekrarlanamadı (taban imaj bildirimi alınamadı). Dış sınır; kod hatası değil.
+- Doğrulama için `bulut-home:test` (aynı `requirements.txt` ile önceden derlenmiş) üzerine güncel `app/` kopyalanarak imaj oluşturuldu ve compose ile çalıştırıldı:
+  - v0.1 veritabanı (v1 şema) üzerinde başlatıldı → şema **v2'ye geçti**, `tool_calls/web_sources/briefings` tabloları oluştu, eski hafıza korundu.
+  - Zamanlayıcı yerel saat 08:30'u geçtiği için açılışta bugünün brifing görevini açtı; işçi model olmadan **deterministik brifing** üretti (not alanında nedeni yazıyor).
+  - `/api/system` web ve brifing durumunu gösteriyor. RAM ≈36 MiB.
+- Bu sırada bulunan hata: brifing kendi görevini "tamamlanan iş" olarak listeliyordu → düzeltildi (`test_brief_tasks_not_listed_as_work`).
+
+### Gerçek ağ
+- Web sayfası okuma ücretsiz olduğu için gerçek siteye denendi: bu geliştirme ortamının ağ politikası genel sitelere bağlantıyı reddediyor (`connect_rejected`), yerel DNS de yok. **Gerçek web erişimi bu ortamda doğrulanamadı.** SSRF koruması gerçek ortamda doğru şekilde çalıştı (169.254.169.254 ve localhost engellendi).
+- Web araması (Brave/SearXNG) anahtar/servis gerektirdiği için denenmedi.
+
+### Bu aşamada bulunan diğer hata
+- HTTP User-Agent başlığında Türkçe karakter ("kişisel") vardı → tüm web istekleri `UnicodeEncodeError` ile çökecekti. Testler yakaladı, düzeltildi.
+
+
 ## 2026-11-16 — Oturum 2: bağımsız denetim
 
 ### Oturum 1'deki 39 test gerçekte neyi doğruluyordu?

@@ -25,6 +25,7 @@ KINDS = {
     "manual": "Elle takip edilen iş (BULUT çalıştırmaz)",
     "llm": "BULUT'un model ile yürüttüğü metin işi (taslak, analiz, özet)",
     "plan": "Büyük hedefi alt görevlere ayırma",
+    "brief": "Günlük brifing (zamanlayıcı açar)",
 }
 APPROVAL_THRESHOLD_TRY = 5.0  # tek görev bu tutarı aşacaksa onay iste
 WORKER_ID = f"{socket.gethostname()}-worker"
@@ -118,10 +119,11 @@ def summary_for_prompt(db: Database) -> str:
 # ---------------- yürütücü ----------------
 
 class TaskWorker:
-    def __init__(self, db: Database, router: LLMRouter, poll_seconds: float = 5.0):
+    def __init__(self, db: Database, router: LLMRouter, poll_seconds: float = 5.0, web=None):
         self.db = db
         self.router = router
         self.poll_seconds = poll_seconds
+        self.web = web
         self._stop = asyncio.Event()
 
     def claim_next(self) -> dict | None:
@@ -140,6 +142,8 @@ class TaskWorker:
         return get(self.db, row["id"])
 
     def _estimate_try(self, task: dict) -> float | None:
+        if task["kind"] == "brief":
+            return None  # küçük, sabit boyutlu çağrı; bütçe ön kontrolü yine router'da
         chain = self.router.chain("smart" if task["kind"] == "plan" else "fast")
         for r in chain:
             p = self.router.providers.get(r.provider)
@@ -203,11 +207,22 @@ class TaskWorker:
     async def _execute(self, task: dict) -> str:
         from .persona import PERSONA
         if task["kind"] == "llm":
-            res, _ = await self.router.complete(
-                system=PERSONA + "\nŞu an arka planda bir görev yürütüyorsun. Sonucu doğrudan, kullanılabilir biçimde yaz.",
+            from . import agent
+            from .tools import TASK_TOOLS, ToolContext
+            ctx = ToolContext(self.db, f"task:{task['id']}", web=self.web)
+            res = await agent.run(
+                self.router, ctx,
+                system=PERSONA + "\nŞu an arka planda bir görev yürütüyorsun; sahibi şu an sohbette değil. Gerekirse araçları "
+                                 "kullan (web araştırmasında kaynak adreslerini ve tarihlerini belirt). Sonucu doğrudan, "
+                                 "kullanılabilir biçimde yaz.",
                 messages=[{"role": "user", "content": f"Görev: {task['title']}\n\n{task['description']}".strip()}],
-                tier="fast", purpose=f"task:{task['id']}")
+                tier="fast", purpose=f"task:{task['id']}", allowed_tools=TASK_TOOLS)
             return res.text
+        if task["kind"] == "brief":
+            from .briefing import generate
+            day = (task.get("dedupe_key") or "brief:")[6:] or None
+            b = await generate(self.db, self.router, self.router.settings.timezone, self.router.settings.usd_try_rate, day=day)
+            return b["content"] + (f"\n\n({b['note']})" if b.get("note") else "")
         if task["kind"] == "plan":
             res, _ = await self.router.complete(
                 system=PERSONA + "\nBir hedefi 3-8 somut, uygulanabilir alt göreve ayır. YALNIZCA JSON dizi döndür: "

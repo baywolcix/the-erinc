@@ -1,4 +1,4 @@
-# Mimari (v0.1.0)
+# Mimari (v0.2.0)
 
 ```
 iPhone / Windows tarayıcı ──HTTPS (Tailscale Serve)──► 127.0.0.1:8080
@@ -36,10 +36,16 @@ iPhone / Windows tarayıcı ──HTTPS (Tailscale Serve)──► 127.0.0.1:808
 | `sysinfo.py` | /proc tabanlı RAM/yük/disk (psutil yok) |
 | `main.py` | HTTP katmanı, güvenlik başlıkları/CSP, CSRF başlığı, günlük yedek döngüsü |
 | `cli.py` | Parola ayarlama, elle yedek |
+| `tools.py` | Araç kayıt defteri: şema + kodda girdi doğrulama + kayıt; kritik araçlar yalnızca onay açar; bağlama göre araç setleri (`CHAT_TOOLS`, `TASK_TOOLS`) |
+| `agent.py` | Manuel araç döngüsü: model → tool_use → araç → tool_result (tek mesajda) → model; 6 adım / 12 araç sınırı; rota sabitleme |
+| `web.py` | Arama (Brave/SearXNG) + sayfa okuma; SSRF koruması, yönlendirme denetimi, boyut/süre sınırı, güvenilmeyen içerik sarmalama, `web_sources` kaydı |
+| `briefing.py` | Günlük brifing: veri toplama (son 24 saat), deterministik metin, isteğe bağlı model özeti, günlük zamanlayıcı |
 
 ## Veri modeli
 
-`users, sessions, login_attempts, projects, conversations, messages, llm_calls, memories (+memories_fts), tasks, approvals, activity, meta`.
+`users, sessions, login_attempts, projects, conversations, messages, llm_calls, memories (+memories_fts), tasks, approvals, activity, meta` + v2: `tool_calls, web_sources, briefings`.
+
+Sohbet akışı: `chat.reply` → bağlam (son 20 mesaj + hafıza + görev özeti) → `agent.run` (araçlar) → son metin `messages`'a; araç çağrıları `tool_calls`'a.
 
 Görev durumları: `pending → running → done | failed`, `pending → waiting_approval → pending | cancelled`, elle `cancelled/done/pending`.
 
@@ -50,5 +56,6 @@ Görev durumları: `pending → running → done | failed`, `pending → waiting
 3. Durum değiştiren her `/api` isteğinde `X-Bulut: 1` başlığı zorunlu.
 4. CSP `default-src 'self'`, satır içi betik yok.
 5. Kritik işlemler `approvals.request()` dışında yürütülemez; `execute()` yalnızca `approved` kaydı bir kez çalıştırır.
-6. Bütçe ve çağrı hızı sınırları router'da, model isteminden bağımsız.
+6. Bütçe ve çağrı hızı sınırları router'da, model isteminden bağımsız; eşzamanlı çağrılar en kötü durum tutarını ayırır.
+8. Model yalnızca kayıtlı araçları çağırabilir; kritik etkili araçlar onay kaydı açar. Web içeriği `<web_icerik>` içinde güvenilmeyen veri olarak verilir; yerel/özel ağ adreslerine istek atılamaz.
 7. Gizli anahtarlar yalnızca ortamda; `data/` ve `.env` Git'e girmez.
