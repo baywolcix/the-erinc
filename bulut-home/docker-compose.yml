@@ -3,6 +3,7 @@
 services:
   bulut:
     build: .
+    image: bulut-home:latest
     container_name: bulut-home
     restart: unless-stopped
     env_file: .env

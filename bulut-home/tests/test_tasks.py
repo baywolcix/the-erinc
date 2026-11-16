@@ -5,6 +5,10 @@ from app.db import Database
 from app.llm.router import LLMRouter
 from conftest import H, FakeProvider, make_settings
 
+import pytest as _pt
+
+pytestmark = _pt.mark.fake_llm
+
 
 def _env(tmp_path, provider=None, **over):
     s = make_settings(tmp_path, **over)

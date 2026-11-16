@@ -7,8 +7,10 @@ from datetime import datetime, timedelta, timezone
 
 from ..config import Settings
 from ..db import Database, now_iso, log_activity
-from .pricing import cost_usd
-from .providers import LLMResult, Provider, ProviderError
+import threading
+
+from .pricing import cost_usd, worst_case_usd
+from .providers import REFUSAL_FALLBACK, LLMResult, Provider, ProviderError
 
 # Karmaşıklık işaretleri: bunlar geçerse akıllı katman
 _SMART_HINTS = (
@@ -66,6 +68,9 @@ class LLMRouter:
         self.db = db
         self.settings = settings
         self.providers = providers
+        # Eşzamanlı istekler bütçeyi birlikte aşmasın: uçuştaki çağrıların en kötü durum maliyeti
+        self._reserved_usd = 0.0
+        self._reserve_lock = threading.Lock()
 
     # ---------- bütçe ----------
     def month_spend_usd(self) -> dict:
@@ -94,20 +99,39 @@ class LLMRouter:
             "reason": None if rate else "USD/TRY kuru girilmedi (BULUT_USD_TRY_RATE); ücretli çağrılar kapalı.",
         }
 
-    def _check_budget(self, provider: Provider, model: str, est_in: int, max_out: int) -> None:
+    def _worst_usd(self, provider: Provider, model: str, est_in: int, max_out: int) -> float:
         price = provider.price(model)
         if price is None:
             raise BudgetError(f"{provider.name}:{model} için fiyat bilinmiyor; bütçe korunamayacağı için çağrı yapılmadı.")
+        worst = worst_case_usd(price, est_in, max_out)
+        fb = REFUSAL_FALLBACK.get(model) if provider.name == "anthropic" else None
+        if fb:  # reddedilip yedek modelde yeniden çalışırsa iki çağrı da ücretlenebilir
+            fb_price = provider.price(fb)
+            if fb_price is None:
+                raise BudgetError(f"Yedek model {fb} için fiyat bilinmiyor.")
+            worst += worst_case_usd(fb_price, est_in, max_out)
+        return worst
+
+    def _reserve(self, provider: Provider, model: str, est_in: int, max_out: int) -> float:
+        """Bütçeyi kontrol et ve en kötü durum tutarını ayır. Dönen tutar `_release` ile bırakılmalı."""
         rate = self.settings.usd_try_rate
         if not rate:
             raise BudgetError("USD/TRY kuru ayarlanmadı (BULUT_USD_TRY_RATE). Bütçe korunamayacağı için ücretli çağrı yapılmadı.")
-        worst = cost_usd(price, est_in, max_out) or 0.0
-        spent = self.month_spend_usd()["usd"]
-        if (spent + worst) * rate > self.settings.monthly_budget_try:
-            raise BudgetError(
-                f"Aylık bütçe sınırı: harcanan ≈{spent * rate:.2f} TL, bu çağrı en kötü durumda ≈{worst * rate:.2f} TL, "
-                f"sınır {self.settings.monthly_budget_try:.0f} TL."
-            )
+        worst = self._worst_usd(provider, model, est_in, max_out)
+        with self._reserve_lock:
+            spent = self.month_spend_usd()["usd"]
+            if (spent + self._reserved_usd + worst) * rate > self.settings.monthly_budget_try:
+                raise BudgetError(
+                    f"Aylık bütçe sınırı: harcanan ≈{spent * rate:.2f} TL, bu çağrı en kötü durumda ≈{worst * rate:.2f} TL"
+                    + (f", süren çağrılar ≈{self._reserved_usd * rate:.2f} TL" if self._reserved_usd else "")
+                    + f", sınır {self.settings.monthly_budget_try:.0f} TL."
+                )
+            self._reserved_usd += worst
+        return worst
+
+    def _release(self, amount: float) -> None:
+        with self._reserve_lock:
+            self._reserved_usd = max(0.0, self._reserved_usd - amount)
 
     def _check_rate(self) -> None:
         since = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(timespec="seconds")
@@ -120,8 +144,7 @@ class LLMRouter:
         provider = self.providers.get(route.provider)
         cost = None
         if res is not None and provider is not None:
-            cost = cost_usd(provider.price(route.model), res.input_tokens, res.output_tokens,
-                            res.cache_read_tokens, res.cache_write_tokens)
+            cost = self._cost(provider, route.model, res)
         with self.db.tx() as t:
             cur = t.execute(
                 "INSERT INTO llm_calls(provider,model,purpose,input_tokens,output_tokens,cache_read_tokens,"
@@ -135,6 +158,22 @@ class LLMRouter:
                 ),
             )
             return cur.lastrowid
+
+    @staticmethod
+    def _cost(provider: Provider, model: str, res: LLMResult) -> float | None:
+        """Yedek model devreye girdiyse her adım kendi modelinin fiyatıyla hesaplanır."""
+        its = res.extra.get("iterations") if res.extra else None
+        if its:
+            total = 0.0
+            for it in its:
+                c = cost_usd(provider.price(it.get("model") or model), it["input_tokens"], it["output_tokens"],
+                             it["cache_read_tokens"], it["cache_write_tokens"])
+                if c is None:
+                    return None
+                total += c
+            return total
+        return cost_usd(provider.price(model), res.input_tokens, res.output_tokens,
+                        res.cache_read_tokens, res.cache_write_tokens)
 
     # ---------- ana çağrı ----------
     def chain(self, tier: str) -> list[Route]:
@@ -164,7 +203,7 @@ class LLMRouter:
                 model = provider.resolve_model(model)
                 route = Route(route.provider, model)
             try:
-                self._check_budget(provider, model, est_in, max_tokens)
+                reserved = self._reserve(provider, model, est_in, max_tokens)
             except BudgetError as e:
                 budget_errors.append(str(e))
                 continue
@@ -174,12 +213,19 @@ class LLMRouter:
                 res = await provider.complete(model=model, system=system, messages=messages,
                                               max_tokens=max_tokens, effort=effort)
             except ProviderError as e:
+                self._release(reserved)
                 self._record(route, purpose, None, str(e)[:500], int((time.monotonic() - t0) * 1000))
                 errors.append(f"{route}: {e}")
                 any_retryable = any_retryable or e.retryable
                 log_activity(self.db, "llm_error", f"{route} başarısız, sıradaki deneniyor", str(e)[:500], level="warn")
                 continue
-            call_id = self._record(route, purpose, res, None, int((time.monotonic() - t0) * 1000))
+            except BaseException:
+                self._release(reserved)
+                raise
+            try:
+                call_id = self._record(route, purpose, res, None, int((time.monotonic() - t0) * 1000))
+            finally:
+                self._release(reserved)
             return res, call_id
         if errors:
             raise ProvidersFailed("Tüm sağlayıcılar başarısız: " + " | ".join(errors), any_retryable)

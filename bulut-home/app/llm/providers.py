@@ -40,10 +40,16 @@ class Provider(Protocol):
                        max_tokens: int, effort: str | None) -> LLMResult: ...
 
 
+# Sunucu tarafı reddetme yedeği: model güvenlik sınıflandırıcısı yüzünden reddederse aynı istek
+# bu modelde yeniden çalışır. Bütçe ön kontrolü öngörülebilir olsun diye "default" yerine sabit model.
+REFUSAL_FALLBACK = {
+    "claude-sonnet-5-5": "claude-sonnet-5",
+    "claude-opus-5-5": "claude-opus-4-8",
+}
+
+
 class AnthropicProvider:
     name = "anthropic"
-    # Sunucu tarafı reddetme yedeği (refusal fallback) desteklenen modeller
-    _FALLBACK_MODELS = {"claude-sonnet-5-5", "claude-opus-5-5", "claude-fable-5-2"}
 
     def __init__(self, api_key: str, http_client=None):
         self._api_key = api_key
@@ -78,9 +84,10 @@ class AnthropicProvider:
         if effort:
             kwargs["output_config"] = {"effort": effort}
         try:
-            if model in self._FALLBACK_MODELS:
+            if model in REFUSAL_FALLBACK:
                 resp = await client.beta.messages.create(
-                    betas=["server-side-fallback-2026-07-01"], fallbacks="default", **kwargs)
+                    betas=["server-side-fallback-2026-07-01"],
+                    fallbacks=[{"model": REFUSAL_FALLBACK[model]}], **kwargs)
             else:
                 resp = await client.messages.create(**kwargs)
         except anthropic.AuthenticationError as e:
@@ -98,6 +105,14 @@ class AnthropicProvider:
         if resp.stop_reason == "refusal":
             text = text or "Bu isteği model güvenlik politikası nedeniyle yanıtlamadı."
         u = resp.usage
+        iterations = []
+        for it in (getattr(u, "iterations", None) or []):
+            iterations.append({
+                "type": getattr(it, "type", None), "model": getattr(it, "model", None) or model,
+                "input_tokens": getattr(it, "input_tokens", 0) or 0, "output_tokens": getattr(it, "output_tokens", 0) or 0,
+                "cache_read_tokens": getattr(it, "cache_read_input_tokens", 0) or 0,
+                "cache_write_tokens": getattr(it, "cache_creation_input_tokens", 0) or 0,
+            })
         return LLMResult(
             text=text,
             provider=self.name,
@@ -107,6 +122,7 @@ class AnthropicProvider:
             cache_read_tokens=getattr(u, "cache_read_input_tokens", 0) or 0,
             cache_write_tokens=getattr(u, "cache_creation_input_tokens", 0) or 0,
             stop_reason=resp.stop_reason,
+            extra={"iterations": iterations} if iterations else {},
         )
 
 

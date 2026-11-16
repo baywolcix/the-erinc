@@ -4,6 +4,10 @@ from app import approvals, memory
 from app.db import Database
 from conftest import H
 
+import pytest as _pt
+
+pytestmark = _pt.mark.no_llm
+
 
 def test_memory_crud_and_search(client):
     r = client.post("/api/memories", json={"content": "Kullanıcı After Effects ile motion design yapıyor", "kind": "fact"}, headers=H)
@@ -54,6 +58,7 @@ def test_execute_without_approval_is_impossible(tmp_path):
     assert db.one("SELECT COUNT(*) AS n FROM projects WHERE id=1")["n"] == 1
 
 
+@_pt.mark.fake_llm
 def test_system_and_reports(client):
     client.post("/api/chat", json={"message": "selam"}, headers=H)
     s = client.get("/api/system").json()

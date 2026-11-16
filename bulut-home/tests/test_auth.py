@@ -2,6 +2,10 @@ from pathlib import Path
 
 from conftest import H
 
+import pytest as _pt
+
+pytestmark = _pt.mark.no_llm
+
 
 def test_setup_requires_token(make_client):
     c, app = make_client()

@@ -1,5 +1,9 @@
 from conftest import H, FakeProvider
 
+import pytest as _pt
+
+pytestmark = _pt.mark.fake_llm
+
 
 def test_chat_persists_and_uses_history(client):
     client.fake.replies = ["Merhaba Umut.", "Az önce selam verdin."]

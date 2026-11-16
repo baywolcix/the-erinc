@@ -19,6 +19,7 @@ def run(coro):
     return asyncio.run(coro)
 
 
+@pytest.mark.fake_llm
 def test_fallback_on_provider_error(tmp_path):
     a = FakeProvider("anthropic", fail_times=5)
     b = FakeProvider("openai_compat", replies=["yedekten"])
@@ -29,12 +30,14 @@ def test_fallback_on_provider_error(tmp_path):
     assert rows == [{"provider": "anthropic", "ok": 0}, {"provider": "openai_compat", "ok": 1}]
 
 
+@pytest.mark.fake_llm
 def test_all_fail(tmp_path):
     r, _ = _router(tmp_path, {"anthropic": FakeProvider(fail_times=9)})
     with pytest.raises(ProvidersFailed):
         run(r.complete(system="s", messages=[{"role": "user", "content": "x"}]))
 
 
+@pytest.mark.fake_llm
 def test_budget_blocks_when_exceeded(tmp_path):
     # 1 TL bütçe, kur 40: 1M çıktı token'ı 5 USD → çok pahalı
     r, db = _router(tmp_path, {"anthropic": FakeProvider()}, monthly_budget_try=1.0)
@@ -43,6 +46,7 @@ def test_budget_blocks_when_exceeded(tmp_path):
     assert db.query("SELECT * FROM llm_calls") == []  # hiç ücretli çağrı yapılmadı
 
 
+@pytest.mark.fake_llm
 def test_budget_blocks_without_rate(tmp_path):
     r, _ = _router(tmp_path, {"anthropic": FakeProvider()}, usd_try_rate=None)
     with pytest.raises(BudgetError):
@@ -50,12 +54,14 @@ def test_budget_blocks_without_rate(tmp_path):
     assert r.budget_status()["blocked"] is True
 
 
+@pytest.mark.fake_llm
 def test_unknown_price_blocked(tmp_path):
     r, _ = _router(tmp_path, {"anthropic": FakeProvider(price=None)})
     with pytest.raises(BudgetError):
         run(r.complete(system="s", messages=[{"role": "user", "content": "x"}]))
 
 
+@pytest.mark.fake_llm
 def test_spend_accumulates(tmp_path):
     r, _ = _router(tmp_path, {"anthropic": FakeProvider()})
     run(r.complete(system="s", messages=[{"role": "user", "content": "x"}]))
@@ -65,6 +71,7 @@ def test_spend_accumulates(tmp_path):
     assert st["spent_try"] == pytest.approx(0.08)
 
 
+@pytest.mark.fake_llm
 def test_hourly_loop_guard(tmp_path, monkeypatch):
     import app.llm.router as rm
     monkeypatch.setattr(rm, "MAX_CALLS_PER_HOUR", 3)
@@ -75,6 +82,7 @@ def test_hourly_loop_guard(tmp_path, monkeypatch):
         run(r.complete(system="s", messages=[{"role": "user", "content": "x"}]))
 
 
+@pytest.mark.no_llm
 def test_pricing():
     assert cost_usd(None, 1, 1) is None
     assert cost_usd(Price(2, 10), 1_000_000, 0) == pytest.approx(2.0)
@@ -82,6 +90,7 @@ def test_pricing():
     assert str(Route.parse("anthropic:claude-haiku-5-5")) == "anthropic:claude-haiku-5-5"
 
 
+@pytest.mark.sdk_http
 def test_openai_compat_provider_parses_response():
     import httpx2
     from app.llm.providers import OpenAICompatProvider, ProviderError

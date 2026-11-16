@@ -195,15 +195,25 @@ class Database:
 
     @contextmanager
     def tx(self) -> Iterator[sqlite3.Connection]:
+        """Yazma işlemi. İç içe çağrılar SAVEPOINT kullanır (ör. tx içinden log_activity)."""
         with self.write_lock:
             c = self.conn()
+            depth = getattr(self._local, "depth", 0)
+            self._local.depth = depth + 1
+            sp = f"sp{depth}"
             try:
-                c.execute("BEGIN IMMEDIATE")
+                c.execute("BEGIN IMMEDIATE" if depth == 0 else f"SAVEPOINT {sp}")
                 yield c
-                c.execute("COMMIT")
+                c.execute("COMMIT" if depth == 0 else f"RELEASE {sp}")
             except BaseException:
-                c.execute("ROLLBACK")
+                if depth == 0:
+                    c.execute("ROLLBACK")
+                else:
+                    c.execute(f"ROLLBACK TO {sp}")
+                    c.execute(f"RELEASE {sp}")
                 raise
+            finally:
+                self._local.depth = depth
 
     def query(self, sql: str, params: tuple | dict = ()) -> list[dict]:
         return [dict(r) for r in self.conn().execute(sql, params).fetchall()]

@@ -20,9 +20,18 @@ Faz 1 tamamlandı, Faz 2'nin çoğu yapıldı.
 - [x] Dockerfile + docker-compose (512 MB sınır, yalnızca localhost)
 
 ### Doğrulanmamış / yarım
-- [ ] Docker imajı derlenmedi (ortamda Docker daemon yoktu)
 - [ ] Gerçek Anthropic/DeepSeek API'siyle canlı çağrı yapılmadı (anahtar yok). İstek biçimi sahte HTTP katmanıyla SDK üzerinden doğrulandı.
 - [ ] Debian 13 / ASUS üzerinde çalıştırılmadı; geliştirme ortamı Linux (kernel 6.18) konteyneriydi
 - [ ] iPhone Safari'de bas-konuş denenmedi (Safari'nin Web Speech desteği kısmi)
 - [ ] Bildirimler (anlık/push) yok — Faz 3
 - [ ] Web araştırması, tarayıcı otomasyonu, Git/PROGRESS.md okuma, ana PC bağlantısı yok — Faz 3/4
+
+## Oturum 2 — 2026-11-16
+
+### Denetim ve düzeltmeler
+- [x] 39 testin neyi doğruladığı sınıflandırıldı (`pytest.ini` işaretleri: fake_llm / sdk_http / no_llm / live). Ayrıntı: `TEST_RESULTS.md`
+- [x] Bütçe: eşzamanlı istek rezervasyonu, sabit reddetme yedeği + iki çağrılık en kötü durum, önbelleğe yazma primi, Haiku uzun istem kademesi, adım bazlı maliyet
+- [x] Veritabanı: iç içe işlemler (SAVEPOINT)
+- [x] Onaylar: yürütücü hatası kaydı
+- [x] Docker imajı gerçekten derlendi ve çalıştırıldı (kalıcılık, healthcheck, uid 1000, 512 MB sınırı doğrulandı)
+- [x] Opt-in canlı API testleri (`tests/live/`, varsayılan atlanır)

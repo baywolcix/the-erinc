@@ -101,7 +101,13 @@ def execute(db: Database, approval_id: int) -> str:
     fn = _EXECUTORS.get(payload.pop("_executor", ""))
     if fn is None:
         return "Yürütücü yok; onay kaydedildi."
-    out = fn(db, payload)
+    try:
+        out = fn(db, payload)
+    except Exception as e:  # noqa: BLE001 — onay tüketildi; hata gizlenmemeli
+        msg = f"Yürütme hatası: {type(e).__name__}: {e}"
+        log_activity(db, "approval_failed", f"Onaylı işlem başarısız: {row['summary']}", detail=msg,
+                     ref=f"approval:{approval_id}", level="error")
+        return msg
     log_activity(db, "approval_executed", f"Yürütüldü: {row['summary']}", detail=out, ref=f"approval:{approval_id}")
     return out
 
